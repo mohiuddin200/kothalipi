@@ -1,0 +1,65 @@
+name: Bug report
+description: Something does not work as it should.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Logs can contain text you dictated, so read them before pasting.
+        For security problems, do not use this form: see SECURITY.md.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Press the dictation shortcut
+        2. Say a sentence
+        3. ...
+    validations:
+      required: true
+  - type: input
+    id: gnome-version
+    attributes:
+      label: GNOME Shell version
+      description: Output of `gnome-shell --version`
+      placeholder: GNOME Shell 48.0
+    validations:
+      required: true
+  - type: input
+    id: distro
+    attributes:
+      label: Distribution
+      placeholder: Ubuntu 25.04
+    validations:
+      required: true
+  - type: dropdown
+    id: session
+    attributes:
+      label: Session type
+      description: Output of `echo $XDG_SESSION_TYPE`
+      options:
+        - Wayland
+        - X11
+    validations:
+      required: true
+  - type: input
+    id: model
+    attributes:
+      label: Whisper model and device
+      description: The contents of `~/.local/share/kothalipi-service/install-state.conf`
+      placeholder: model=base, device=cpu
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: |
+        Output of `journalctl -b /usr/bin/gnome-shell | grep -i kothalipi`.
+        After a GNOME Shell crash, attach the report from `./debug-crash.sh` instead.
+      render: text

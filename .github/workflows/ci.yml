@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install GLib tools
+        run: sudo apt-get update && sudo apt-get install -y libglib2.0-bin
+
+      - name: Validate extension metadata
+        run: python3 -m json.tool src/metadata.json > /dev/null
+
+      - name: Compile settings schema
+        run: glib-compile-schemas --strict --dry-run src/schemas
+
+      - name: Check top-bar icon is well-formed
+        run: python3 -c "import sys, xml.dom.minidom as m; [m.parse(f) for f in sys.argv[1:]]" src/icons/*.svg
+
+      - name: Check Python syntax
+        run: python3 -m compileall -q service/src
+
+      - name: Check shell script syntax
+        run: |
+          for script in service/install-service.sh dev/*.sh debug-crash.sh; do
+            bash -n "$script"
+          done

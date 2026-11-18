@@ -1,260 +1,197 @@
-# Speech2Text
+<p align="center"><img src="./images/kothalipi-logo.svg" width="96" alt="Kothalipi logo"></p>
 
-![GPLv3](https://img.shields.io/badge/License-GPLv3-yellow.svg)
-![Linux](https://img.shields.io/badge/Linux-FCC624?style=flat&logo=linux&logoColor=black)
-![GNOME](https://img.shields.io/badge/GNOME-4A90D9?style=flat&logo=gnome&logoColor=white)
-![JavaScript](https://img.shields.io/badge/JavaScript-F7DF1E?style=flat&logo=javascript&logoColor=black)
-![Python](https://img.shields.io/badge/Python-3776AB?style=flat&logo=python&logoColor=white)
-![D-Bus](https://img.shields.io/badge/D--Bus-000000?style=flat&logo=dbus&logoColor=white)
-![Whisper](https://img.shields.io/badge/Whisper-412991?style=flat&logo=openai&logoColor=white)
-[![Download from GNOME Extensions](https://img.shields.io/badge/Download%20from-GNOME%20Extensions-blue)](https://extensions.gnome.org/extension/8238/speech2text-extension/)
+<h1 align="center">Kothalipi</h1>
 
-A GNOME Shell extension that adds speech-to-text functionality
-using OpenAI's automated speech recognition [Whisper](https://github.com/openai/whisper) model. Speak into your microphone and have your words transcribed with the option to automatically insert at your cursor (on X11 only).
+<p align="center">
+  Dictation for GNOME Shell. Speak, and your words appear where you are typing.<br>
+  Speech recognition runs on your own machine with <a href="https://github.com/openai/whisper">Whisper</a>.
+</p>
 
-![recording-modal](./images/recording-modal.png)
+<p align="center">
+  <a href="./LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0--or--later-blue" alt="License: GPL-3.0-or-later"></a>
+  <img src="https://img.shields.io/badge/GNOME%20Shell-46%E2%80%9350-4A86CF" alt="GNOME Shell 46 to 50">
+  <a href="https://github.com/mohiuddin200/kothalipi/actions/workflows/ci.yml"><img src="https://github.com/mohiuddin200/kothalipi/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
+</p>
+
+![Kothalipi inserting dictated text into a text field](./images/screenshot-inserted.png)
+
+**Kothalipi** (কথালিপি) is Bengali for "speech-writing".
+
+> **Status:** early. Kothalipi is not yet on extensions.gnome.org and its service is not yet on PyPI.
+> For now, install from source as described below.
+
+Kothalipi is a fork of [Speech2Text](https://github.com/kavehtehrani/speech2text-extension) by Kaveh Tehrani, with a
+redesigned interface. See [Credits](#credits).
 
 ## Features
 
-- 🎤 **Speech Recognition** using OpenAI Whisper
-- 🖱️ **Click to Record** from top panel microphone icon
-- ⌨️ **Keyboard Shortcut** support (default: Alt+Super+R)
-- 🌍 **Multi-language Support** (depending on Whisper model)
-- 🔒 **Privacy-First** - All processing happens locally
-- ⌨️ **Automatic Text Insertion** at cursor location (only on X11)
-- 🔄 **Non-blocking Mode** - Continue working while transcription processes in the background
+- **Dictate anywhere.** Press a shortcut, click the pill at the bottom of the screen, or click the top-bar icon.
+- **Text goes to your cursor.** Kothalipi hands the text to the focused field directly. If the app does not accept
+  that, it pastes instead; if nothing is focused, the text is left on the clipboard.
+- **Words while you speak.** An optional rough preview appears above the pill during recording.
+- **Private by design.** Audio is recorded and transcribed locally. Nothing is sent to a server.
+- **Many languages.** Whatever your chosen Whisper model supports.
+- **CPU or GPU.** Runs on CPU by default; NVIDIA CUDA is supported for larger models.
 
-## Architecture
+## How it looks
 
-The extension consists of two components:
+| Recording | Transcribing |
+| --- | --- |
+| ![The pill while recording, with a cancel button, voice bars and a stop button](./images/pill-recording.png) | ![The pill while transcribing](./images/pill-processing.png) |
+| **Done** | **Something went wrong** |
+| ![The pill after copying the text](./images/pill-done.png) | ![The pill reporting that no speech was detected](./images/pill-error.png) |
 
-1. **GNOME Extension** (lightweight UI) - Provides the panel button, keyboard shortcuts, and settings
-2. **D-Bus Service** (separate package) - Handles audio recording, speech transcription, and text insertion
+The pill follows your light or dark desktop, and the top bar gets a small icon:
 
-**Important for GNOME Extensions Store**: This extension follows GNOME's architectural guidelines by using a separate
-D-Bus service for speech processing. The extension itself is lightweight and communicates with the external service over
-D-Bus using the `org.gnome.Shell.Extensions.Speech2Text` interface. The service is **not bundled** with the extension
-and must be installed separately as a dependency. This extension requires the external background
-service [speech2text-extension-service](https://pypi.org/project/speech2text-extension-service/) to be installed.
-See [Service Installation](#Service-Installation) below.
+| Light desktop | Top-bar icon |
+| --- | --- |
+| ![The pill on a light background](./images/pill-light.png) | ![The Kothalipi icon in the GNOME top bar](./images/panel-icon.png) |
+
+These images come from the project's screenshot harness (`make shots`), which runs the extension in a test shell.
+
+## How it works
+
+Kothalipi has two parts:
+
+1. **The GNOME Shell extension** (`src/`): the pill, the top-bar icon, the shortcut and the settings.
+2. **A background service** (`service/`): records audio with FFmpeg and transcribes it with Whisper.
+
+They talk over D-Bus (`io.github.mohiuddin200.Kothalipi`). The service is installed separately, into its own Python
+virtual environment, because GNOME extensions are not allowed to bundle that kind of code.
 
 ## Requirements
 
-### System Dependencies
+- GNOME Shell 46 to 50
+- Python 3.8 to 3.13, with the `venv` module
+- FFmpeg
+- A clipboard tool: `wl-clipboard` on Wayland, `xclip` or `xsel` on X11
+- `xdotool` on X11 only
 
-- **GNOME Shell 46 or later** (tested up to GNOME 49)
-- **Python 3.8–3.13** (Python 3.14+ not supported yet due to ML dependency compatibility)
-- **python3-venv** (for virtual environment creation)
-- **D-Bus Python library** is installed inside the service virtualenv (`dbus-next`; no system `python3-dbus` / `python3-gi` required)
-- **FFmpeg** (for audio recording)
-- **xdotool** (for text insertion on X11 only)
-- **Clipboard tools**: xclip/xsel (X11) or wl-clipboard (Wayland)
-
-If you are missing any of the required dependencies the installation script will let you know.
-
-# Installation
-
-## 1- Extension Installation
-
-### GNOME Extensions Store (recommended)
-
-[![Download from GNOME Extensions](https://img.shields.io/badge/Download%20from-GNOME%20Extensions-blue)](https://extensions.gnome.org/extension/8238/speech2text-extension/)
-
-1. Visit [GNOME Extensions](https://extensions.gnome.org/extension/8238/speech2text-extension/) and click "Install"
-2. The extension will automatically detect required system packages and let you know what you will need to install
-3. Follow the setup dialog to install the required D-Bus service (automatically downloads from PyPI)
-4. Restart GNOME Shell to complete the installation
-
-### Manual Installation
-
-For the manual installation experience, use the repository installer script:
+On Ubuntu or Debian:
 
 ```bash
-git clone https://github.com/kavehtehrani/speech2text-extension.git
-cd speech2text-extension
+sudo apt install ffmpeg python3-venv wl-clipboard
+```
+
+The service installer checks these and tells you what is missing.
+
+## Installation
+
+### 1. Install the extension
+
+```bash
+git clone https://github.com/mohiuddin200/kothalipi.git
+cd kothalipi
 make install
 ```
 
-#### IMPORTANT: Restart GNOME Shell After Installation
+`make install` links `src/` into `~/.local/share/gnome-shell/extensions/`, so keep the clone where it is.
 
-**For X11 sessions:**
-
-1. Press `Alt+F2`
-2. Type `r`
-3. Press `Enter`
-
-**For Wayland sessions:**
-
-1. Log out of your current session
-2. Log back in
-
-## 2- Service Installation
-
-The D-Bus service has to be manually installed per GNOME's guidelines. For most people, the 'base' model and 'cpu' processing is sufficient and most compatible across platforms.
+### 2. Install the service
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/kavehtehrani/speech2text-extension/refs/heads/main/service/install-service.sh | bash -s -- --pypi --non-interactive --service-version 1.2.0 --whisper-model base
+./service/install-service.sh --local --whisper-model base
 ```
 
-#### Whisper model & CPU/GPU settings
+This creates `~/.local/share/kothalipi-service` and downloads the speech recognition libraries, which takes a few
+minutes. The `base` model on CPU is a good starting point.
 
-Speech2Text uses OpenAI Whisper locally. You configure model/device by (re)installing the D-Bus service with the appropriate installer flags:
-
-- **Whisper model**: `tiny`, `base`, `small`, `medium`, `large`, and variants. See [here](https://github.com/openai/whisper) for more info.
-- **Device**:
-  - **CPU (default)**: recommended for most users; easier install and compatibility.
-  - **GPU**: attempts to use an accelerator backend via PyTorch. On Linux this usually means **NVIDIA CUDA**.
-    (Advanced users may be able to use other backends depending on their PyTorch build.)
-
-Important: switching CPU/GPU will require reinstalling the background service so the correct ML dependencies are installed.
-
-For instance if you wanted to run the whisper model 'medium' and use 'gpu' processing, then install the service with:
+To use an NVIDIA GPU and a larger model:
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/kavehtehrani/speech2text-extension/refs/heads/main/service/install-service.sh | bash -s -- --pypi --non-interactive --service-version 1.2.0 --gpu --whisper-model medium
+./service/install-service.sh --local --gpu --whisper-model small
 ```
 
-Notes about installers and distributions:
+Models are `tiny`, `base`, `small`, `medium`, `large` and their variants; see the
+[Whisper documentation](https://github.com/openai/whisper#available-models-and-languages). Re-run the installer to
+switch between CPU and GPU. More detail is in the [service README](./service/README.md).
 
-- This repository includes `service/install-service.sh`, a distro-agnostic service installer that only verifies system
-  dependencies and installs the Python D-Bus service into `~/.local/share/speech2text-extension-service`.
-- You must install system packages yourself using your distro’s package manager. The setup dialog will list any missing
-  packages.
-  - Note: the setup dialog’s **Automatic Install** uses `--pypi` (PyPI). If you are developing locally from a git clone,
-    use `./service/install-service.sh --local` instead.
-  - Note: the installer supports **GPU mode** via `--gpu`.
+### 3. Restart GNOME Shell and enable
 
-The service is available as a Python package on
-PyPI: [speech2text-extension-service](https://pypi.org/project/speech2text-extension-service/)
+- **Wayland:** log out and log back in.
+- **X11:** press `Alt+F2`, type `r`, press `Enter`.
 
-### Upgrading from older versions (CUDA/NVIDIA pip packages cleanup)
+Then:
 
-Older versions of the service installer could pull GPU-related _pip packages_ (e.g. `nvidia-*`) into the service’s
-virtual environment. New versions default to **CPU-only** PyTorch wheels unless you explicitly choose GPU mode.
-
-If you are using **CPU mode** and want to remove legacy GPU-related pip packages, simply re-run the installer
-(from the setup dialog or manually). The installer rebuilds the service virtual environment from scratch, so it will
-remove any old GPU-related pip packages from the service venv automatically.
+```bash
+gnome-extensions enable kothalipi@mohiuddin200.github.io
+```
 
 ## Usage
 
-### Quick Start
+1. Put your cursor where you want the text.
+2. Press **Super+Alt+R**, or click the pill or the top-bar icon.
+3. Speak.
+4. Press the shortcut again, or click the red stop button. Click **×** to cancel.
 
-1. **Click** the microphone icon in the top panel, or
-2. **Press** the keyboard shortcut (default: Alt+Super+R)
-3. **Speak** when the recording dialog appears
-4. **Review** the transcribed text in the preview dialog
-5. **Click Insert** to type the text, or **Copy** to clipboard
+The text is inserted at your cursor. Recording also stops on its own when it reaches the recording limit (60 seconds
+by default).
 
-#### Non-blocking Mode
+Right-click the top-bar icon for **Settings** and **Setup**.
 
-With non-blocking transcription enabled:
+### Settings
 
-1. Record your speech as usual
-2. The modal closes immediately when recording stops
-3. A "..." appears next to the microphone icon while processing
-4. Click the notification when transcription is ready to review/copy
+| Setting | What it does |
+| --- | --- |
+| Dictation shortcut | Press it anywhere to start or stop dictating. |
+| Recording limit | Dictation stops on its own after this long. |
+| Show words while you speak | A rough preview above the pill. It is not the final text. |
+| Insert text at the cursor | When no field is focused, the text is copied instead. |
+| Copy to clipboard | Also keep each transcript on the clipboard. |
+| Show the pill when idle | A small pill at the bottom of the screen. Click it to dictate. |
 
 ## Troubleshooting
 
-If the extension doesn't appear in GNOME Extensions:
-
-First make sure 1- extension is enabled in the GNOME Extensions, and 2- you have restarted your shell already. Otherwise, proceed to troubleshoot:
+**The extension does not appear.** Make sure you restarted GNOME Shell after installing, then check:
 
 ```bash
-# View extension logs
-journalctl -f | grep -E "(gnome-shell|speech2text-extension-service|speech2text|ffmpeg|org\.gnome\.Speech2Text|Whisper|transcrib)"
-
-# Check installation status
 make status
-
-# Verify schema compilation
-make verify-schema
-
+gnome-extensions info kothalipi@mohiuddin200.github.io
 ```
 
-If the D-Bus service isn't working:
+**Recording does not start, or the Setup dialog keeps appearing.** Check that the service answers:
 
 ```bash
-# Check if service is running
-dbus-send --session --print-reply --dest=org.gnome.Shell.Extensions.Speech2Text /org/gnome/Shell/Extensions/Speech2Text org.gnome.Shell.Extensions.Speech2Text.GetServiceStatus
-
-# Start the service manually
-~/.local/share/speech2text-extension-service/speech2text-extension-service
-
-# Check D-Bus service file
-ls ~/.local/share/dbus-1/services/org.gnome.Shell.Extensions.Speech2Text.service
+gdbus call --session --dest io.github.mohiuddin200.Kothalipi \
+  --object-path /io/github/mohiuddin200/Kothalipi \
+  --method io.github.mohiuddin200.Kothalipi.GetServiceStatus
 ```
 
-You can read more about the D-Bus service here: [D-Bus Service Documentation](./service/README.md).
-
-### GNOME Shell Crashes
-
-If you experience GNOME Shell crashes when using the extension, use the crash analysis script:
+If it does not, run it by hand to see the error:
 
 ```bash
-# After a crash, run the debug script
-./debug-crash.sh
+~/.local/share/kothalipi-service/kothalipi-service
 ```
 
-This script will analyze system logs and generate a detailed crash report. Choose option 1 (last 30 minutes) after
-experiencing a crash. The script will create a timestamped file with all relevant crash information.
-
-### Text Insertion Not Working
-
-1. **On X11**: Ensure xdotool is installed
-2. **On Wayland**: Text insertion is limited - use Copy to Clipboard instead
-3. Check if target application accepts simulated keyboard input
-
-## Uninstallation
-
-### Gnome Extensions
-
-You should be able to uninstall the extension directly using the GNOME Extensions tool.
-
-### Manual Uninstallation
+**Logs:**
 
 ```bash
-# Remove everything (extension + service)
-make clean
+journalctl -f | grep -iE "kothalipi|whisper|ffmpeg"
 ```
 
-## Privacy & Security
+**GNOME Shell crashed.** Run `./debug-crash.sh` afterwards and attach its report to your issue.
 
-🔒 **100% Local Processing** - All speech recognition happens on your local machine. Nothing is ever sent to the cloud or
-external servers. The extension uses OpenAI's Whisper model locally, ensuring privacy of your voice data.
-
-## Development
-
-### Building from Source
+## Uninstalling
 
 ```bash
-# Complete development setup (install extension + service + compile schemas)
-make setup
-
-# Check installation status
-make status
-
-# Clean installation (extension + d-bus service)
-make clean
+gnome-extensions disable kothalipi@mohiuddin200.github.io
+make clean   # removes the extension link and the service
 ```
-
-## License
-
-This project is licensed under the GPLv3 - see the LICENSE file for details.
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a pull request or open issues.
+Bug reports, ideas and pull requests are welcome. Start with [CONTRIBUTING.md](./CONTRIBUTING.md); it explains how to
+run the extension in a test shell without touching your real session. Please also read the
+[Code of Conduct](./CODE_OF_CONDUCT.md). To report a security problem, see [SECURITY.md](./SECURITY.md).
 
-### Reporting Issues
+## Credits
 
-Please include:
+Kothalipi is a fork of [Speech2Text](https://github.com/kavehtehrani/speech2text-extension) by
+[Kaveh Tehrani](https://github.com/kavehtehrani) and its contributors. The background service, the D-Bus design and
+the installer come from that project. Thank you.
 
-- GNOME Shell version (`gnome-shell --version`)
-- Operating system and version (`lsb_release -a`)
-- Session type (`echo $XDG_SESSION_TYPE`)
-- Extension logs (`journalctl /usr/bin/gnome-shell | grep speech2text`)
-- Service logs (`journalctl --user -u speech2text-service`)
-- **For crashes**: Run `./debug-crash.sh` and include the generated report
-- Steps to reproduce the issue
+Speech recognition is done by [OpenAI Whisper](https://github.com/openai/whisper).
+
+## License
+
+[GPL-3.0-or-later](./LICENSE), the same license as the project it is forked from.
