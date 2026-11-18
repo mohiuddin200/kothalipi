@@ -79,8 +79,8 @@ The service installer checks these and tells you what is missing.
 
 ### Quick setup with an AI agent
 
-If you use a coding agent such as Claude Code, copy this prompt into it and it will do the setup for you. To install
-by hand instead, follow the three steps below.
+If you use a coding agent such as Claude Code, copy this prompt into it. It checks your hardware, picks a suitable
+Whisper model, and does the setup for you. To install by hand instead, follow the three steps below.
 
 ```text
 Set up the Kothalipi dictation extension for GNOME Shell on this computer.
@@ -88,23 +88,37 @@ Source and instructions: https://github.com/mohiuddin200/kothalipi (read the REA
 
 1. Check that this is Linux running GNOME Shell 46 to 50 (gnome-shell --version) and note whether the
    session is Wayland or X11 (echo $XDG_SESSION_TYPE). If it is not GNOME, stop and tell me.
-2. Check for git, make, ffmpeg, Python 3.8 to 3.13 with the venv module, and a clipboard tool
+2. Check my hardware: CPU threads (nproc), memory (free -g), free disk space in my home folder
+   (df -h ~), and whether there is an NVIDIA GPU with working drivers and how much memory it has
+   (nvidia-smi --query-gpu=name,memory.total --format=csv,noheader).
+3. Choose the Whisper model and device from what you found:
+   - NVIDIA GPU with 8 GB or more of GPU memory, and 10 GB free disk: --gpu --whisper-model medium
+   - NVIDIA GPU with 4 to 8 GB of GPU memory, and 10 GB free disk:    --gpu --whisper-model small
+   - No usable NVIDIA GPU (or less than 4 GB, or not enough disk), running on CPU:
+       12 or more CPU threads and 16 GB or more memory:  --whisper-model small
+       4 or more CPU threads and 8 GB or more memory:    --whisper-model base
+       anything less:                                    --whisper-model tiny
+   CPU mode needs about 4 GB of free disk. If there is less, stop and tell me.
+   Tell me in two lines what hardware you found and which model you chose and why, then continue
+   without waiting for an answer.
+4. Check for git, make, ffmpeg, Python 3.8 to 3.13 with the venv module, and a clipboard tool
    (wl-clipboard on Wayland; xclip and xdotool on X11). List anything missing and ask me before
    running any sudo command to install it.
-3. Clone the repository to ~/.local/src/kothalipi (or update it with git pull if it is already there).
+5. Clone the repository to ~/.local/src/kothalipi (or update it with git pull if it is already there).
    It must stay there, because the extension is linked from it.
-4. In the clone, run: make install
-5. Install the background service: ./service/install-service.sh --local --non-interactive --whisper-model base
-   This downloads the speech recognition libraries and takes several minutes. If nvidia-smi works on
-   this machine, ask me first whether I want GPU mode; if I say yes, add: --gpu --whisper-model small
-6. Check that the service answers:
+6. In the clone, run: make install
+7. Install the background service with the options you chose in step 3:
+   ./service/install-service.sh --local --non-interactive <options from step 3>
+   This downloads the speech recognition libraries and takes several minutes, longer in GPU mode.
+8. Check that the service answers:
    gdbus call --session --dest io.github.mohiuddin200.Kothalipi --object-path /io/github/mohiuddin200/Kothalipi --method io.github.mohiuddin200.Kothalipi.GetServiceStatus
    The reply should start with 'ready'.
-7. Run: gnome-extensions enable kothalipi@mohiuddin200.github.io
+9. Run: gnome-extensions enable kothalipi@mohiuddin200.github.io
    On Wayland this fails until I have logged out and back in. That is expected: do not log me out or
    restart my session. Tell me to log out, log back in, and run that command myself.
-8. Finish with a short summary: what you installed, anything that failed, and how to use it
-   (press Super+Alt+R, speak, press it again; the first dictation is slower because the model downloads).
+10. Finish with a short summary: my hardware, the model you installed, anything that failed, and how
+    to use it (press Super+Alt+R, speak, press it again; the first dictation is slower because the
+    model downloads). Mention that I can switch model later by re-running the installer.
 
 Do not change any other system settings, and do not delete anything outside ~/.local/src/kothalipi.
 ```
@@ -133,6 +147,18 @@ To use an NVIDIA GPU and a larger model:
 ```bash
 ./service/install-service.sh --local --gpu --whisper-model small
 ```
+
+Which model to pick is a trade-off between accuracy and speed. As a starting point:
+
+| Your computer | Suggested options |
+| --- | --- |
+| NVIDIA GPU, 8 GB or more of GPU memory | `--gpu --whisper-model medium` |
+| NVIDIA GPU, 4 to 8 GB of GPU memory | `--gpu --whisper-model small` |
+| No NVIDIA GPU, 12+ CPU threads and 16+ GB memory | `--whisper-model small` |
+| No NVIDIA GPU, 4+ CPU threads and 8+ GB memory | `--whisper-model base` |
+| Anything less | `--whisper-model tiny` |
+
+GPU mode needs about 10 GB of free disk space; CPU mode about 4 GB.
 
 Models are `tiny`, `base`, `small`, `medium`, `large` and their variants; see the
 [Whisper documentation](https://github.com/openai/whisper#available-models-and-languages). Re-run the installer to
