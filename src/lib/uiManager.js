@@ -1,48 +1,48 @@
 import Clutter from "gi://Clutter";
+import Gio from "gi://Gio";
 import St from "gi://St";
 import * as Main from "resource:///org/gnome/shell/ui/main.js";
 import * as PanelMenu from "resource:///org/gnome/shell/ui/panelMenu.js";
 import * as PopupMenu from "resource:///org/gnome/shell/ui/popupMenu.js";
-import * as MessageTray from "resource:///org/gnome/shell/ui/messageTray.js";
 
+import { FlowPill } from "./flowPill.js";
 import { SettingsDialog } from "./settingsDialog.js";
 import { ServiceSetupDialog } from "./setupDialog.js";
 import { ShortcutCapture } from "./shortcutCapture.js";
+import { shortcutKeys } from "./shortcutKeys.js";
 import { log } from "./resourceUtils.js";
+
+// "<Control><Alt>h" -> "Ctrl+Alt+H"
+function formatShortcut(accelerator) {
+  return shortcutKeys(accelerator).join("+");
+}
 
 export class UIManager {
   constructor(extensionCore) {
     this.extensionCore = extensionCore;
     this.icon = null;
     this.iconWidget = null;
-    this.processingLabel = null;
+    this.pill = null;
     this.settingsDialog = null;
+    this._settingsSignals = [];
   }
 
   initialize() {
     // Create the panel button
-    this.icon = new PanelMenu.Button(0.0, "Speech2Text Indicator");
+    this.icon = new PanelMenu.Button(0.0, "Kothalipi Indicator");
 
-    // Container to hold icon and processing indicator
     const iconBox = new St.BoxLayout({
       style_class: "panel-status-indicators-box",
     });
 
     // Set up the icon
     this.iconWidget = new St.Icon({
-      icon_name: "microphone-symbolic",
+      gicon: Gio.icon_new_for_string(
+        `${this.extensionCore.path}/icons/voice-cursor-symbolic.svg`
+      ),
       style_class: "system-status-icon",
     });
     iconBox.add_child(this.iconWidget);
-
-    // Processing label (hidden by default)
-    this.processingLabel = new St.Label({
-      text: "...",
-      style: "font-weight: bold; margin-left: 2px;",
-      y_align: Clutter.ActorAlign.CENTER,
-    });
-    this.processingLabel.hide();
-    iconBox.add_child(this.processingLabel);
 
     this.icon.add_child(iconBox);
 
@@ -54,6 +54,34 @@ export class UIManager {
 
     // Add to panel (remove existing first to avoid conflicts)
     this._addToPanel();
+
+    this._createPill();
+  }
+
+  _createPill() {
+    const core = this.extensionCore;
+    const settings = core.settings;
+
+    this.pill = new FlowPill({
+      onStart: () => core.toggleRecording(),
+      onStop: () => core.recordingController?.stop(),
+      onCancel: () => core.recordingController?.cancel(),
+      onSecondary: () => this.showSettingsWindow(),
+    });
+
+    const syncShortcut = () =>
+      this.pill?.setShortcutLabel(
+        formatShortcut(settings.get_strv("toggle-recording")[0])
+      );
+    const syncIdle = () =>
+      this.pill?.setIdleVisible(settings.get_boolean("show-idle-pill"));
+
+    this._settingsSignals = [
+      settings.connect("changed::toggle-recording", syncShortcut),
+      settings.connect("changed::show-idle-pill", syncIdle),
+    ];
+    syncShortcut();
+    syncIdle();
   }
 
   createPopupMenu() {
@@ -96,25 +124,13 @@ export class UIManager {
   _addToPanel() {
     try {
       // Remove any existing indicator first
-      Main.panel.statusArea["speech2text-indicator"]?.destroy();
-      delete Main.panel.statusArea["speech2text-indicator"];
+      Main.panel.statusArea["kothalipi-indicator"]?.destroy();
+      delete Main.panel.statusArea["kothalipi-indicator"];
     } catch (e) {
       log.debug("No existing indicator to remove:", e.message);
     }
 
-    Main.panel.addToStatusArea("speech2text-indicator", this.icon);
-  }
-
-  showProcessingState() {
-    if (this.processingLabel) {
-      this.processingLabel.show();
-    }
-  }
-
-  hideProcessingState() {
-    if (this.processingLabel) {
-      this.processingLabel.hide();
-    }
+    Main.panel.addToStatusArea("kothalipi-indicator", this.icon);
   }
 
   showSettingsWindow() {
@@ -141,67 +157,25 @@ export class UIManager {
     Main.notify(title, message);
   }
 
-  /**
-   * Show a clickable notification (GNOME Shell 46–49).
-   * Falls back to Main.notify if MessageTray API changes.
-   */
-  showActionableNotification(title, message, onActivate) {
-    try {
-      // Follow the upstream docs for GNOME Shell extensions:
-      // https://gjs.guide/extensions/topics/notifications.html#notifications
-      const source = MessageTray.getSystemSource?.();
-      if (!source) {
-        Main.notify(title, message);
-        return;
-      }
-
-      const notification = new MessageTray.Notification({
-        source,
-        title,
-        body: message,
-        iconName: "microphone-symbolic",
-        urgency: MessageTray.Urgency?.NORMAL ?? undefined,
-      });
-
-      // Connect click activation (works across versions).
-      if (onActivate) {
-        const handler = () => {
-          try {
-            onActivate();
-          } catch (e) {
-            console.error("Notification activation handler failed:", e);
-            Main.notify(
-              "Speech2Text Error",
-              "Failed to open transcription view."
-            );
-          }
-        };
-
-        notification.connect("activated", handler);
-
-        // Add an explicit action button where supported (more reliable than body click).
-        if (typeof notification.addAction === "function") {
-          notification.addAction("View", handler);
-        }
-      }
-
-      source.addNotification?.(notification);
-    } catch (e) {
-      console.error("Failed to show actionable notification:", e);
-      Main.notify(title, message);
-    }
-  }
-
   captureNewShortcut(callback) {
     const shortcutCapture = new ShortcutCapture();
     shortcutCapture.capture(callback);
   }
 
   cleanup() {
+    for (const id of this._settingsSignals)
+      this.extensionCore.settings?.disconnect(id);
+    this._settingsSignals = [];
+
+    if (this.pill) {
+      this.pill.destroy();
+      this.pill = null;
+    }
+
     // Close settings dialog
     if (this.settingsDialog) {
       log.debug("Closing settings dialog");
-      this.settingsDialog.close();
+      this.settingsDialog.close({ animate: false });
       this.settingsDialog = null;
     }
 
@@ -214,17 +188,17 @@ export class UIManager {
       }
 
       // Remove from status area to prevent conflicts
-      if (Main.panel.statusArea["speech2text-indicator"]) {
+      if (Main.panel.statusArea["kothalipi-indicator"]) {
         log.debug("Cleaning up status area indicator");
-        Main.panel.statusArea["speech2text-indicator"].destroy();
-        delete Main.panel.statusArea["speech2text-indicator"];
+        Main.panel.statusArea["kothalipi-indicator"].destroy();
+        delete Main.panel.statusArea["kothalipi-indicator"];
       }
     } catch (error) {
       log.warn("Error cleaning up panel icon:", error.message);
       // Force cleanup even if there are errors
       this.icon = null;
       try {
-        delete Main.panel.statusArea["speech2text-indicator"];
+        delete Main.panel.statusArea["kothalipi-indicator"];
       } catch (e) {
         // Ignore secondary cleanup errors
       }

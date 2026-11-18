@@ -57,12 +57,12 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         --help|-h)
-            echo "Speech2Text Service Installer"
+            echo "Kothalipi Service Installer"
             echo ""
             echo "Usage: $0 [OPTIONS]"
             echo ""
             echo "Options:"
-            echo "  --python <cmd>    Use a specific Python interpreter (also via SPEECH2TEXT_PYTHON)"
+            echo "  --python <cmd>    Use a specific Python interpreter (also via KOTHALIPI_PYTHON)"
             echo "  --local           Force installation from local source (requires pyproject.toml)"
             echo "  --pypi            Force installation from PyPI"
             echo "  --gpu             Install GPU-enabled ML dependencies (CUDA/accelerator support)"
@@ -158,7 +158,7 @@ get_python_version_major_minor() {
 }
 
 select_python() {
-    local override="${PYTHON_OVERRIDE:-${SPEECH2TEXT_PYTHON:-}}"
+    local override="${PYTHON_OVERRIDE:-${KOTHALIPI_PYTHON:-}}"
     local candidates=()
 
     if [ -n "$override" ]; then
@@ -256,9 +256,9 @@ ask_user() {
 
 # Detect installation mode
 detect_install_mode() {
-    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"    # .../speech2text-extension/service
-    REPO_ROOT="$(dirname "$SCRIPT_DIR")"                           # .../speech2text-extension
-    SERVICE_SRC_DIR="$REPO_ROOT/service"                            # .../speech2text-extension/service
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"    # .../kothalipi/service
+    REPO_ROOT="$(dirname "$SCRIPT_DIR")"                           # .../kothalipi
+    SERVICE_SRC_DIR="$REPO_ROOT/service"                            # .../kothalipi/service
 
     if [ "$FORCE_MODE" = true ]; then
         echo "🔧 Installation mode forced: $INSTALL_MODE"
@@ -287,7 +287,7 @@ detect_install_mode() {
     echo "📦 PyPI installation mode - no local source found"
 }
 
-print_status "Installing Speech2Text D-Bus Service"
+print_status "Installing Kothalipi D-Bus Service"
 
 # Detect installation mode early
 detect_install_mode
@@ -392,18 +392,18 @@ print_status "Checking system dependencies..."
 check_system_dependencies
 
 # Create virtual environment for the service
-SERVICE_DIR="$HOME/.local/share/speech2text-extension-service"
+SERVICE_DIR="$HOME/.local/share/kothalipi-service"
 VENV_DIR="$SERVICE_DIR/venv"
 
 print_status "Creating service directory: $SERVICE_DIR"
 mkdir -p "$SERVICE_DIR"
 
-print_status "Stopping any running Speech2Text service (best-effort)..."
+print_status "Stopping any running Kothalipi service (best-effort)..."
 # The service is D-Bus activated; if it's running while we rebuild the venv, it may keep old libs loaded.
 # Ignore errors if no process is running.
 if command_exists pkill; then
-    pkill -f "$SERVICE_DIR/venv/bin/speech2text-extension-service" 2>/dev/null || true
-    pkill -f "$SERVICE_DIR/speech2text-extension-service" 2>/dev/null || true
+    pkill -f "$SERVICE_DIR/venv/bin/kothalipi-service" 2>/dev/null || true
+    pkill -f "$SERVICE_DIR/kothalipi-service" 2>/dev/null || true
 else
     print_warning "pkill not found; skipping best-effort service stop."
     print_warning "If the service is currently running, consider logging out/in (Wayland) or restarting GNOME Shell (X11)."
@@ -473,41 +473,41 @@ install_ml_dependencies
 install_service_package() {
     case "$INSTALL_MODE" in
         "local")
-            print_status "Installing speech2text-extension-service from local source..."
+            print_status "Installing kothalipi-service from local source..."
             SRC_DIR="$LOCAL_SOURCE_DIR"
             if [ -z "$SRC_DIR" ] || [ ! -f "$SRC_DIR/pyproject.toml" ]; then
                 error_exit "Local installation requested but pyproject.toml not found in $SRC_DIR. Run from repo root or use --pypi."
             fi
             
-            "$VENV_DIR/bin/pip" install --no-deps "$SRC_DIR" || error_exit "Failed to install local speech2text-extension-service package"
+            "$VENV_DIR/bin/pip" install --no-deps "$SRC_DIR" || error_exit "Failed to install local kothalipi-service package"
             echo "✅ Installed from local source: $SRC_DIR"
             ;;
             
         "pypi")
-            print_status "Installing speech2text-extension-service from PyPI..."
+            print_status "Installing kothalipi-service from PyPI..."
             
             # Use provided service version, or fall back to default for backwards compatibility
             if [ -n "$SERVICE_VERSION" ]; then
                 REQUIRED_SERVICE_VERSION="$SERVICE_VERSION"
                 print_status "Installing exact version: $REQUIRED_SERVICE_VERSION"
-                PIP_SPEC="speech2text-extension-service==$REQUIRED_SERVICE_VERSION"
+                PIP_SPEC="kothalipi-service==$REQUIRED_SERVICE_VERSION"
             else
                 REQUIRED_SERVICE_VERSION="1.2.0"
                 print_status "Using default minimum version: $REQUIRED_SERVICE_VERSION"
-                PIP_SPEC="speech2text-extension-service>=$REQUIRED_SERVICE_VERSION"
+                PIP_SPEC="kothalipi-service>=$REQUIRED_SERVICE_VERSION"
             fi
             
             # Try PyPI installation with fallback
             # Require the service version that includes dbus-next (no dbus-python/PyGObject build deps).
             if "$VENV_DIR/bin/pip" install --upgrade --no-deps --index-url "https://pypi.org/simple" "$PIP_SPEC"; then
-                echo "✅ Installed from PyPI: https://pypi.org/project/speech2text-extension-service/"
+                echo "✅ Installed from PyPI: https://pypi.org/project/kothalipi-service/"
             else
                 echo ""
                 print_warning "PyPI installation failed!"
                 if [ -n "$SERVICE_VERSION" ]; then
-                    echo "This installer requires speech2text-extension-service == $REQUIRED_SERVICE_VERSION."
+                    echo "This installer requires kothalipi-service == $REQUIRED_SERVICE_VERSION."
                 else
-                    echo "This installer requires speech2text-extension-service >= $REQUIRED_SERVICE_VERSION."
+                    echo "This installer requires kothalipi-service >= $REQUIRED_SERVICE_VERSION."
                 fi
                 echo "If you are developing locally, re-run with --local to install from this repository."
                 
@@ -542,14 +542,14 @@ install_service_package
 
 print_status "Creating service wrapper script..."
 # Create a wrapper script that activates the venv and runs the service
-cat > "$SERVICE_DIR/speech2text-extension-service" << 'EOF'
+cat > "$SERVICE_DIR/kothalipi-service" << 'EOF'
 #!/bin/bash
-# Speech2Text Service Wrapper
+# Kothalipi Service Wrapper
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VENV_DIR="$SCRIPT_DIR/venv"
-exec "$VENV_DIR/bin/speech2text-extension-service" "$@"
+exec "$VENV_DIR/bin/kothalipi-service" "$@"
 EOF
-chmod +x "$SERVICE_DIR/speech2text-extension-service"
+chmod +x "$SERVICE_DIR/kothalipi-service"
 
 print_status "Installing D-Bus service..."
 # Install D-Bus service file
@@ -565,17 +565,17 @@ install_dbus_service_file() {
             if [ -z "$SRC_DIR" ]; then
                 SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
             fi
-            if [ -f "$SRC_DIR/data/org.gnome.Shell.Extensions.Speech2Text.service" ]; then
-                sed "s|/usr/bin/speech2text-service|$SERVICE_DIR/speech2text-extension-service|g" \
-                    "$SRC_DIR/data/org.gnome.Shell.Extensions.Speech2Text.service" | \
-                    grep -vE '^User=' > "$DBUS_SERVICE_DIR/org.gnome.Shell.Extensions.Speech2Text.service"
+            if [ -f "$SRC_DIR/data/io.github.mohiuddin200.Kothalipi.service" ]; then
+                sed "s|/usr/bin/kothalipi-service|$SERVICE_DIR/kothalipi-service|g" \
+                    "$SRC_DIR/data/io.github.mohiuddin200.Kothalipi.service" | \
+                    grep -vE '^User=' > "$DBUS_SERVICE_DIR/io.github.mohiuddin200.Kothalipi.service"
                 echo "✅ D-Bus service file installed from local data"
             else
                 # Fallback: create directly if data file isn't present
-                cat > "$DBUS_SERVICE_DIR/org.gnome.Shell.Extensions.Speech2Text.service" << EOF
+                cat > "$DBUS_SERVICE_DIR/io.github.mohiuddin200.Kothalipi.service" << EOF
 [D-BUS Service]
-Name=org.gnome.Shell.Extensions.Speech2Text
-Exec=$SERVICE_DIR/speech2text-extension-service
+Name=io.github.mohiuddin200.Kothalipi
+Exec=$SERVICE_DIR/kothalipi-service
 EOF
                 echo "✅ D-Bus service file created (fallback)"
             fi
@@ -583,10 +583,10 @@ EOF
             
         "pypi")
             # Create D-Bus service file directly (since data files aren't included in PyPI package for GNOME compliance)
-            cat > "$DBUS_SERVICE_DIR/org.gnome.Shell.Extensions.Speech2Text.service" << EOF
+            cat > "$DBUS_SERVICE_DIR/io.github.mohiuddin200.Kothalipi.service" << EOF
 [D-BUS Service]
-Name=org.gnome.Shell.Extensions.Speech2Text
-Exec=$SERVICE_DIR/speech2text-extension-service
+Name=io.github.mohiuddin200.Kothalipi
+Exec=$SERVICE_DIR/kothalipi-service
 EOF
             echo "✅ D-Bus service file created for PyPI installation"
             ;;
@@ -599,25 +599,25 @@ print_status "Creating desktop entry..."
 DESKTOP_DIR="$HOME/.local/share/applications"
 mkdir -p "$DESKTOP_DIR"
 
-echo "[Desktop Entry]" > "$DESKTOP_DIR/speech2text-extension-service.desktop"
-echo "Type=Application" >> "$DESKTOP_DIR/speech2text-extension-service.desktop"
-echo "Name=Speech2Text Service" >> "$DESKTOP_DIR/speech2text-extension-service.desktop"
-echo "Comment=D-Bus service for speech-to-text functionality" >> "$DESKTOP_DIR/speech2text-extension-service.desktop"
-echo "Exec=$SERVICE_DIR/speech2text-extension-service" >> "$DESKTOP_DIR/speech2text-extension-service.desktop"
-echo "Icon=audio-input-microphone" >> "$DESKTOP_DIR/speech2text-extension-service.desktop"
-echo "StartupNotify=false" >> "$DESKTOP_DIR/speech2text-extension-service.desktop"
-echo "NoDisplay=true" >> "$DESKTOP_DIR/speech2text-extension-service.desktop"
-echo "Categories=Utility;" >> "$DESKTOP_DIR/speech2text-extension-service.desktop"
+echo "[Desktop Entry]" > "$DESKTOP_DIR/kothalipi-service.desktop"
+echo "Type=Application" >> "$DESKTOP_DIR/kothalipi-service.desktop"
+echo "Name=Kothalipi Service" >> "$DESKTOP_DIR/kothalipi-service.desktop"
+echo "Comment=D-Bus service for speech-to-text functionality" >> "$DESKTOP_DIR/kothalipi-service.desktop"
+echo "Exec=$SERVICE_DIR/kothalipi-service" >> "$DESKTOP_DIR/kothalipi-service.desktop"
+echo "Icon=audio-input-microphone" >> "$DESKTOP_DIR/kothalipi-service.desktop"
+echo "StartupNotify=false" >> "$DESKTOP_DIR/kothalipi-service.desktop"
+echo "NoDisplay=true" >> "$DESKTOP_DIR/kothalipi-service.desktop"
+echo "Categories=Utility;" >> "$DESKTOP_DIR/kothalipi-service.desktop"
 
 print_status "Installation complete!"
 echo ""
 echo -e "${BLUE}========================================${NC}"
-echo -e "${BLUE}  Speech2Text Service Installed  ${NC}"
+echo -e "${BLUE}  Kothalipi Service Installed  ${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo ""
 echo -e "${YELLOW}Installation mode: $INSTALL_MODE${NC}"
 if [ "$INSTALL_MODE" = "pypi" ]; then
-    echo -e "${YELLOW}Package source: https://pypi.org/project/speech2text-extension-service/${NC}"
+    echo -e "${YELLOW}Package source: https://pypi.org/project/kothalipi-service/${NC}"
 else
     echo -e "${YELLOW}Package source: Local repository${NC}"
 fi
@@ -642,15 +642,15 @@ echo -e "${YELLOW}The D-Bus service has been installed and registered.${NC}"
 echo -e "${YELLOW}It will start automatically when the GNOME extension requests it.${NC}"
 echo ""
 echo -e "${YELLOW}To manually test the service:${NC}"
-echo "  $SERVICE_DIR/speech2text-extension-service"
+echo "  $SERVICE_DIR/kothalipi-service"
 echo ""
 echo -e "${YELLOW}To verify D-Bus registration:${NC}"
-echo "  dbus-send --session --dest=org.gnome.Shell.Extensions.Speech2Text --print-reply /org/gnome/Shell/Extensions/Speech2Text org.gnome.Shell.Extensions.Speech2Text.GetServiceStatus"
+echo "  dbus-send --session --dest=io.github.mohiuddin200.Kothalipi --print-reply /io/github/mohiuddin200/Kothalipi io.github.mohiuddin200.Kothalipi.GetServiceStatus"
 echo ""
 echo -e "${YELLOW}To uninstall the service:${NC}"
 echo "  rm -rf $SERVICE_DIR"
-echo "  rm $DBUS_SERVICE_DIR/org.gnome.Shell.Extensions.Speech2Text.service"
-echo "  rm $DESKTOP_DIR/speech2text-extension-service.desktop"
+echo "  rm $DBUS_SERVICE_DIR/io.github.mohiuddin200.Kothalipi.service"
+echo "  rm $DESKTOP_DIR/kothalipi-service.desktop"
 echo ""
 echo -e "${GREEN}🎉 Service installation completed successfully!${NC}"
 echo -e "${GREEN}The service is ready to be used by the GNOME Shell extension.${NC}"

@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <schemalist>
-    <schema id="org.gnome.shell.extensions.speech2text" path="/org/gnome/shell/extensions/speech2text/">
+    <schema id="org.gnome.shell.extensions.kothalipi" path="/org/gnome/shell/extensions/kothalipi/">
         <key name="toggle-recording" type="as">
             <default>['&lt;Super&gt;&lt;Alt&gt;r']</default>
             <summary>Toggle recording</summary>
@@ -26,6 +26,21 @@
             <default>false</default>
             <summary>Non-blocking transcription</summary>
             <description>If enabled, the extension will show a small non-blocking “Transcribing…” window while processing your audio, so you can keep using your computer. A notification will be shown when transcription finishes.</description>
+        </key>
+        <key name="auto-insert" type="b">
+            <default>true</default>
+            <summary>Insert text at the cursor</summary>
+            <description>When a transcription is ready, put the text into the field that has keyboard focus. When off, or when no field is focused, the text is only copied to the clipboard.</description>
+        </key>
+        <key name="live-preview" type="b">
+            <default>true</default>
+            <summary>Show words while you speak</summary>
+            <description>While dictating, show a rough transcript of the last few seconds above the pill. The text that gets delivered is still transcribed in full when dictation stops.</description>
+        </key>
+        <key name="show-idle-pill" type="b">
+            <default>true</default>
+            <summary>Show the pill when idle</summary>
+            <description>Keep a small pill at the bottom of the screen while not dictating. Click it to start. When off, the pill only appears during dictation.</description>
         </key>
     </schema>
 </schemalist>

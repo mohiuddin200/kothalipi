@@ -50,7 +50,7 @@ export class ServiceManager {
       log.warn("D-Bus manager initialization failed or was nullified");
       return {
         available: false,
-        error: "Failed to initialize Speech2Text service connection.",
+        error: "Failed to initialize Kothalipi service connection.",
       };
     }
 
@@ -59,7 +59,7 @@ export class ServiceManager {
       log.debug("D-Bus manager became null during initialization");
       return {
         available: false,
-        error: "Speech2Text service connection became unavailable.",
+        error: "Kothalipi service connection became unavailable.",
       };
     }
 
@@ -75,7 +75,7 @@ export class ServiceManager {
       return {
         available: false,
         error:
-          "Speech2Text service installation is incomplete.\n" +
+          "Kothalipi service installation is incomplete.\n" +
           `Please install (or reinstall) the service using the official installer so the marker file is created:\n  ${getServiceDir()}/install-state.conf`,
       };
     }

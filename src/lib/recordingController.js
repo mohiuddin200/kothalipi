@@ -1,17 +1,48 @@
-import St from "gi://St";
+import GLib from "gi://GLib";
 import { RecordingStateManager } from "./recordingStateManager.js";
-import { RecordingDialog } from "./recordingDialog.js";
+import { TextInserter } from "./textInserter.js";
+import { isWaylandCompositor } from "./compat.js";
 import { log } from "./resourceUtils.js";
 
+const COUNTDOWN_SECONDS = 10;
+// Above this the microphone is clearly picking something up (about -46 dBFS).
+const SOUND_LEVEL = 0.1;
+// How long to wait for a first sound before pointing at the microphone.
+const SILENCE_WARNING_MS = 4000;
+
+const dim = (words) => `<span alpha="58%">${words}</span>`;
+
+// Service errors are written for logs. The pill has room for one short line
+// that names the problem and what to try.
+function describeError(message) {
+  const text = (message || "").toLowerCase();
+  if (text.includes("no speech") || text.includes("empty text"))
+    return "No speech detected. Check your microphone";
+  if (text.includes("no audio") || text.includes("audio file not found"))
+    return "Nothing was recorded. Check your microphone";
+  if (text.includes("ffmpeg"))
+    return "The recorder could not start. Check your microphone";
+  return "Transcription failed. Try again";
+}
+
+// Drives one dictation from start to delivered text, and keeps the pill in
+// step with it.
 export class RecordingController {
   constructor(uiManager, serviceManager) {
     this.uiManager = uiManager;
     this.serviceManager = serviceManager;
     this.recordingStateManager = null;
+    this._phase = "idle"; // idle | starting | recording | processing
+    this._countdownId = 0;
+    this._inserter = new TextInserter();
+    this._resetHint();
+  }
+
+  get pill() {
+    return this.uiManager.pill;
   }
 
   initialize() {
-    // Initialize recording state manager
     this.recordingStateManager = new RecordingStateManager(
       this.uiManager.icon,
       this.serviceManager.dbusManager
@@ -19,265 +50,244 @@ export class RecordingController {
   }
 
   async toggleRecording(settings) {
-    // Service readiness is handled by the extension entrypoint (single source of truth).
-    // Here we only ensure our local state manager exists.
+    // Service readiness is handled by the extension entrypoint.
     if (!this.recordingStateManager) this.initialize();
 
-    // Now handle the actual recording toggle
-    if (this.recordingStateManager.isRecording()) {
-      log.debug("Stopping recording");
-      const stopped = await this.recordingStateManager.stopRecording();
-      if (stopped) {
-        this._beginTranscriptionUi();
-      }
-    } else {
-      log.debug("Starting recording");
+    if (this._phase === "idle") await this.start(settings);
+    else if (this._phase === "recording") await this.stop();
+    // While starting or transcribing there is nothing to toggle yet.
+  }
 
-      // Ensure RecordingStateManager has current service manager reference
-      if (
-        this.recordingStateManager &&
-        this.serviceManager.dbusManager &&
-        this.recordingStateManager.dbusManager !==
-          this.serviceManager.dbusManager
-      ) {
-        this.recordingStateManager.updateDbusManager(
-          this.serviceManager.dbusManager
-        );
-      }
+  async start(settings) {
+    if (this._phase !== "idle") return;
+    this._phase = "starting";
 
-      const success = await this.recordingStateManager.startRecording(settings);
+    const dbusManager = this.serviceManager.dbusManager;
+    if (dbusManager && this.recordingStateManager.dbusManager !== dbusManager)
+      this.recordingStateManager.updateDbusManager(dbusManager);
 
-      if (success) {
-        // Create and show recording dialog
-        const recordingDialog = new RecordingDialog(
-          () => {
-            // Cancel callback
-            this.recordingStateManager.cancelRecording();
-            this.recordingStateManager.setRecordingDialog(null);
-          },
-          (text) => {
-            // Insert callback
-            log.debug(`Inserting text: ${text}`);
-            this._typeText(text);
-            this.recordingStateManager.setRecordingDialog(null);
-          },
-          async () => {
-            // Stop callback
-            log.debug("Stop recording button clicked");
-            const stopped = await this.recordingStateManager.stopRecording();
-            if (stopped) {
-              this._beginTranscriptionUi();
-            }
-          },
-          settings.get_int("recording-duration")
-        );
+    // Open the pill straight away; the service answers within a few frames.
+    this.pill?.setState("recording");
+    const started = await this.recordingStateManager.startRecording(settings);
 
-        this.recordingStateManager.setRecordingDialog(recordingDialog);
-        log.debug(
-          "RecordingController: Created and set recording dialog, opening now"
-        );
-        recordingDialog.open();
-      } else {
-        this.uiManager.showServiceSetupDialog(
-          "Failed to start recording. Please verify the Speech2Text service is installed and up to date."
-        );
-      }
+    if (this._phase !== "starting") {
+      // Cancelled before the service answered: drop the recording it began.
+      if (started) await this.recordingStateManager.cancelRecording();
+      return;
     }
+    if (!started) {
+      this._phase = "idle";
+      this.pill?.setState("idle");
+      this.uiManager.showServiceSetupDialog(
+        "Failed to start recording. Please verify the Kothalipi service is installed and up to date."
+      );
+      return;
+    }
+
+    this._phase = "recording";
+    this._resetHint();
+    this._recordingSince = GLib.get_monotonic_time();
+    this._refreshHint();
+    this._armCountdown(settings.get_int("recording-duration"));
+  }
+
+  async stop() {
+    if (this._phase !== "recording") return;
+    this._beginProcessing();
+    const stopped = await this.recordingStateManager.stopRecording();
+    if (!stopped && this._phase === "processing") {
+      this.recordingStateManager.reset();
+      this._phase = "idle";
+      this.pill?.setState("error", {
+        label: "Could not stop the recording. Try again",
+      });
+    }
+  }
+
+  async cancel() {
+    if (this._phase === "idle") return;
+    this._clearCountdown();
+    this._phase = "idle";
+    this.pill?.setState("idle");
+    await this.recordingStateManager.cancelRecording();
   }
 
   handleRecordingStopped(recordingId, reason) {
-    if (!this.recordingStateManager) {
-      log.debug("Recording state manager not initialized");
-      return;
-    }
-
-    log.debug(
-      `RecordingController: Recording stopped - ID: ${recordingId}, reason: ${reason}`
-    );
-    if (reason === "completed") {
-      // Recording completed automatically - begin transcription UI.
-      const shouldShowUi =
-        this.recordingStateManager.handleRecordingCompleted(recordingId);
-      if (shouldShowUi) {
-        this._beginTranscriptionUi();
-      }
-    }
-    // For manual stops (reason === "stopped"), the dialog is already closed
-    // in the stopRecording method
+    if (!this._isCurrent(recordingId)) return;
+    log.debug(`Recording stopped: ${recordingId} (${reason})`);
+    // The time limit ran out, so the service stopped on its own.
+    if (reason === "completed" && this._phase === "recording")
+      this._beginProcessing();
   }
 
-  handleTranscriptionReady(recordingId, text) {
-    if (!this.recordingStateManager) {
-      log.debug("Recording state manager not initialized");
+  handleAudioLevel(recordingId, level) {
+    if (this._phase !== "recording" || !this._isCurrent(recordingId)) return;
+    this.pill?.pushLevel(level);
+
+    if (this._heardSound) return;
+    if (level > SOUND_LEVEL) {
+      this._heardSound = true;
+      if (this._silenceWarned) this._refreshHint();
+    } else if (
+      !this._silenceWarned &&
+      GLib.get_monotonic_time() - this._recordingSince > SILENCE_WARNING_MS * 1000
+    ) {
+      this._silenceWarned = true;
+      this._refreshHint();
+    }
+  }
+
+  // A rough reading of what was just said. It is only shown; the text that
+  // gets delivered arrives with handleTranscriptionReady.
+  handlePartialTranscript(recordingId, text) {
+    if (this._phase !== "recording" || !this._isCurrent(recordingId)) return;
+    const words = (text || "").replace(/\s+/g, " ").trim();
+    if (!words) return;
+    this._heardSound = true;
+    this._transcript = words;
+    this._refreshHint();
+  }
+
+  async handleTranscriptionReady(recordingId, text) {
+    if (!this._isCurrent(recordingId)) return;
+    log.debug(`Transcription ready: ${recordingId}`);
+    this._finish();
+
+    const settings = this.uiManager.extensionCore.settings;
+    const insert =
+      !isWaylandCompositor() && settings.get_boolean("skip-preview-x11");
+
+    if (insert) {
+      this._typeText(text);
+      this.pill?.setState("done", { label: "Inserted", holdMs: 1400 });
       return;
     }
 
-    this._endTranscriptionUi();
+    try {
+      const { method, copied } = await this._inserter.deliver(text, {
+        insert: settings.get_boolean("auto-insert"),
+        copy: settings.get_boolean("copy-to-clipboard"),
+      });
+      // A new dictation may have started while the text was being placed.
+      if (this._phase !== "idle") return;
 
-    log.debug(
-      `RecordingController: Transcription ready - ID: ${recordingId}, text: "${text}"`
-    );
-    const result = this.recordingStateManager.handleTranscriptionReady(
-      recordingId,
-      text,
-      this.uiManager.extensionCore.settings
-    );
-
-    log.debug(
-      `RecordingController: Transcription result - action: ${result?.action}`
-    );
-
-    if (result && result.action === "nonBlockingClipboard") {
-      // Non-blocking mode is clipboard-only: do NOT auto-insert or show a modal preview.
-      try {
-        const autoCopy =
-          this.uiManager.extensionCore.settings.get_boolean(
-            "copy-to-clipboard"
-          );
-
-        if (autoCopy) {
-          const clipboard = St.Clipboard.get_default();
-          clipboard.set_text(St.ClipboardType.CLIPBOARD, result.text);
-          this.uiManager.showActionableNotification(
-            "Speech2Text",
-            "Transcription copied to clipboard. Click to review.",
-            () => this._showCopyOnlyPreviewDialog(result.text)
-          );
-        } else {
-          this.uiManager.showActionableNotification(
-            "Speech2Text",
-            "Transcription ready. Click to view and copy.",
-            () => this._showCopyOnlyPreviewDialog(result.text)
-          );
-        }
-      } catch (e) {
-        console.error(`Error copying to clipboard: ${e}`);
-      }
-      return;
-    }
-
-    if (result && result.action === "insert") {
-      this._typeText(result.text);
-    } else if (result && result.action === "createPreview") {
-      log.debug("Creating new preview dialog for transcribed text");
-      this._showPreviewDialog(result.text);
-    } else if (result && result.action === "ignored") {
-      log.debug("Transcription ignored - recording was cancelled");
-      // Nothing to do - recording was cancelled
+      const dim = (words) => `  <span alpha="58%">${words}</span>`;
+      let label = `Copied${dim("Ctrl+V to paste")}`;
+      if (method === "inserted")
+        label = copied ? `Inserted${dim("and copied")}` : "Inserted";
+      else if (method === "pasted") label = `Pasted${dim("and copied")}`;
+      this.pill?.setState("done", {
+        label,
+        holdMs: method === "clipboard" ? 2400 : 1500,
+      });
+    } catch (e) {
+      console.error(`Error delivering the text: ${e}`);
+      if (this._phase === "idle")
+        this.pill?.setState("error", {
+          label: "Could not place the text. Try again",
+        });
     }
   }
 
   handleRecordingError(recordingId, errorMessage) {
-    if (!this.recordingStateManager) {
-      log.debug("Recording state manager not initialized");
-      return;
-    }
-
-    this._endTranscriptionUi();
-
-    if (
-      this.uiManager.extensionCore.settings.get_boolean(
-        "non-blocking-transcription"
-      )
-    ) {
-      console.error(`Transcription failed: ${errorMessage}`);
-    }
-
-    this.recordingStateManager.handleRecordingError(recordingId, errorMessage);
+    if (!this._isCurrent(recordingId)) return;
+    log.warn(`Recording error: ${errorMessage}`);
+    this._finish();
+    this.pill?.setState("error", { label: describeError(errorMessage) });
   }
 
-  _showPreviewDialog(text) {
-    log.debug("Creating preview dialog for text:", text);
-
-    // Create a new preview-only dialog
-    const previewDialog = new RecordingDialog(
-      () => {
-        // Cancel callback - just close
-        previewDialog.close();
-      },
-      (finalText) => {
-        // Insert callback
-        log.debug(`Inserting text from preview: ${finalText}`);
-        this._typeText(finalText);
-        previewDialog.close();
-      },
-      null, // No stop callback needed for preview-only
-      0 // No duration for preview-only
+  _isCurrent(recordingId) {
+    const manager = this.recordingStateManager;
+    return (
+      !!manager &&
+      !manager.isCancelled &&
+      manager.currentRecordingId === recordingId
     );
-
-    // First open the dialog, then show preview
-    log.debug("Opening preview dialog");
-    previewDialog.open();
-    log.debug("Showing preview in opened dialog");
-    previewDialog.showPreview(text);
   }
 
-  _showCopyOnlyPreviewDialog(text) {
-    // Copy-only preview: disable insert even on X11 (predictable for non-blocking mode).
-    const previewDialog = new RecordingDialog(
-      () => {
-        previewDialog.close();
-      },
-      null, // no insert callback
-      null,
-      0,
-      { allowInsert: false }
+  _beginProcessing() {
+    this._clearCountdown();
+    this._phase = "processing";
+    this.pill?.setState("processing");
+  }
+
+  _finish() {
+    this._clearCountdown();
+    this._phase = "idle";
+    this.recordingStateManager.reset();
+  }
+
+  _resetHint() {
+    this._transcript = "";
+    this._countdown = "";
+    this._heardSound = false;
+    this._silenceWarned = false;
+    this._recordingSince = 0;
+  }
+
+  // The line above the pill while recording: what was heard so far, or why
+  // nothing is showing, with the remaining time after it near the limit.
+  _refreshHint() {
+    if (this._phase !== "recording") return;
+
+    let line = null;
+    if (this._transcript) line = GLib.markup_escape_text(this._transcript, -1);
+    else if (this._silenceWarned && !this._heardSound)
+      line = "No sound yet. Check your microphone";
+    else if (this.recordingStateManager?.livePreview) line = dim("Listening…");
+
+    if (this._countdown)
+      line = line ? `${line}  ${dim(this._countdown)}` : this._countdown;
+    this.pill?.setHint(line, { keepEnd: true });
+  }
+
+  // Show the remaining time once the limit is close.
+  _armCountdown(duration) {
+    this._clearCountdown();
+    let remaining = Math.min(COUNTDOWN_SECONDS, duration);
+    const tick = () => {
+      if (this._phase !== "recording" || remaining <= 0) {
+        this._countdownId = 0;
+        return GLib.SOURCE_REMOVE;
+      }
+      this._countdown = `Stops in ${remaining}s`;
+      this._refreshHint();
+      remaining -= 1;
+      this._countdownId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 1000, tick);
+      return GLib.SOURCE_REMOVE;
+    };
+    this._countdownId = GLib.timeout_add(
+      GLib.PRIORITY_DEFAULT,
+      Math.max(0, duration - remaining) * 1000,
+      tick
     );
-    previewDialog.open();
-    previewDialog.showPreview(text);
+  }
+
+  _clearCountdown() {
+    if (this._countdownId) {
+      GLib.source_remove(this._countdownId);
+      this._countdownId = 0;
+    }
   }
 
   async _typeText(text) {
-    await this.serviceManager.typeText(
-      text,
-      this.uiManager.extensionCore.settings.get_boolean("copy-to-clipboard")
-    );
-  }
-
-  _beginTranscriptionUi() {
-    const settings = this.uiManager.extensionCore.settings;
-    const nonBlocking = settings.get_boolean("non-blocking-transcription");
-
-    if (nonBlocking) {
-      // Close the blocking modal (if present) and replace with a small non-modal window.
-      const dialog = this.recordingStateManager?.recordingDialog;
-      if (dialog) {
-        try {
-          dialog.close();
-        } catch (e) {
-          log.debug(
-            "RecordingController: failed to close dialog (non-fatal):",
-            e?.message || String(e)
-          );
-        } finally {
-          this.recordingStateManager.setRecordingDialog(null);
-        }
-      }
-
-      // Show processing state in tray icon (no notification - just visual indicator)
-      this.uiManager.showProcessingState();
-      return;
+    try {
+      await this.serviceManager.typeText(
+        text,
+        this.uiManager.extensionCore.settings.get_boolean("copy-to-clipboard")
+      );
+    } catch (e) {
+      console.error(`Error typing text: ${e}`);
     }
-
-    // Default behavior: use the existing modal dialog's processing UI.
-    const dialog = this.recordingStateManager?.recordingDialog;
-    if (dialog && typeof dialog.showProcessing === "function") {
-      dialog.showProcessing();
-    }
-  }
-
-  _endTranscriptionUi() {
-    // Hide the processing state in tray icon
-    this.uiManager.hideProcessingState();
   }
 
   cleanup() {
+    this._clearCountdown();
+    this._inserter.destroy();
+    this._phase = "idle";
     if (this.recordingStateManager) {
-      log.debug("Cleaning up recording state manager");
       this.recordingStateManager.cleanup();
       this.recordingStateManager = null;
     }
-
-    this._endTranscriptionUi();
   }
 }

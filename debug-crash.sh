@@ -29,12 +29,12 @@ find_crash_details() {
     echo ""
     
     # 4. Look for our extension's activity before crash
-    echo ">>> Speech2Text Extension Activity Before Crash:"
+    echo ">>> Kothalipi Extension Activity Before Crash:"
     # Check both journalctl and local log file
-    journalctl --since "$time_range" | grep -i "speech2text\|org.gnome.Shell.Extensions.Speech2Text" | tail -20
+    journalctl --since "$time_range" | grep -i "kothalipi\|io.github.mohiuddin200.Kothalipi" | tail -20
     
     # Also check local log file if it exists
-    LOCAL_LOG="$HOME/.local/share/speech2text-extension-service/logs/speech2text-service.log"
+    LOCAL_LOG="$HOME/.local/share/kothalipi-service/logs/kothalipi-service.log"
     if [ -f "$LOCAL_LOG" ]; then
         echo ""
         echo ">>> Local Service Log (last 50 lines):"
@@ -73,10 +73,10 @@ find_crash_details() {
     if [ -n "$LAST_LOGOUT" ]; then
         echo "Last logout detected at: $LAST_LOGOUT"
         echo "Context (5 minutes before logout):"
-        journalctl --since "$LAST_LOGOUT - 5 minutes" --until "$LAST_LOGOUT + 1 minute" | grep -E "(gnome-shell|speech2text|error|crash|modal)" | tail -30
+        journalctl --since "$LAST_LOGOUT - 5 minutes" --until "$LAST_LOGOUT + 1 minute" | grep -E "(gnome-shell|kothalipi|error|crash|modal)" | tail -30
     else
         echo "No recent logout detected, showing general context:"
-        journalctl --since "$time_range" | grep -E "(gnome-shell|speech2text|error|crash|modal)" | tail -30
+        journalctl --since "$time_range" | grep -E "(gnome-shell|kothalipi|error|crash|modal)" | tail -30
     fi
 }
 
@@ -115,7 +115,7 @@ check_extension_details() {
     echo "=== EXTENSION DETAILS ==="
     
     # Check if extension is installed
-    EXT_DIR="$HOME/.local/share/gnome-shell/extensions/speech2text-extension@kaveh.page"
+    EXT_DIR="$HOME/.local/share/gnome-shell/extensions/kothalipi@mohiuddin200.github.io"
     if [ -d "$EXT_DIR" ]; then
         echo "Extension installed at: $EXT_DIR"
         echo "Extension files:"
@@ -134,7 +134,7 @@ check_extension_details() {
     
     # Check extension status
     echo "Extension status:"
-    gnome-extensions show speech2text-extension@kaveh.page 2>/dev/null || echo "Extension not found/enabled"
+    gnome-extensions show kothalipi@mohiuddin200.github.io 2>/dev/null || echo "Extension not found/enabled"
 }
 
 # Generate output filename with timestamp
@@ -179,14 +179,14 @@ run_analysis() {
         echo "Generated: $(date)"
         echo ""
         echo "KEY SECTIONS TO REVIEW:"
-        echo "- Speech2Text Extension Activity Before Crash"
+        echo "- Kothalipi Extension Activity Before Crash"
         echo "- Critical Errors and Segfaults"
         echo "- JavaScript/GJS Errors"
         echo "- Modal/UI Related Errors"
         echo "- Complete Log Context Around Most Recent Session End"
         echo ""
         echo "WHAT TO LOOK FOR:"
-        echo "- Segfaults or crashes mentioning 'speech2text' or 'recording'"
+        echo "- Segfaults or crashes mentioning 'kothalipi' or 'recording'"
         echo "- JavaScript/GJS errors from our extension"
         echo "- Modal/Dialog related errors"
         echo "- Timeline showing session termination"

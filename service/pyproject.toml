@@ -3,9 +3,9 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "speech2text-extension-service"
-version = "1.2.0"
-description = "D-Bus service providing speech-to-text functionality for GNOME Shell"
+name = "kothalipi-service"
+version = "1.3.0"
+description = "D-Bus service providing speech-to-text for the Kothalipi GNOME Shell extension"
 readme = "README.md"
 license = "GPL-3.0-or-later"
 license-files = ["LICENSE"]
@@ -13,7 +13,7 @@ authors = [
     {name = "Kaveh Tehrani", email = "codemonkey13x@gmail.com"}
 ]
 maintainers = [
-    {name = "Kaveh Tehrani", email = "codemonkey13x@gmail.com"}
+    {name = "Mohiuddin"}
 ]
 keywords = [
     "gnome",
@@ -52,16 +52,16 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/kavehtehrani/speech2text-extension"
-Repository = "https://github.com/kavehtehrani/speech2text-extension"
-Issues = "https://github.com/kavehtehrani/speech2text-extension/issues"
-Documentation = "https://github.com/kavehtehrani/speech2text-extension/blob/main/README.md"
+Homepage = "https://github.com/mohiuddin200/kothalipi"
+Repository = "https://github.com/mohiuddin200/kothalipi"
+Issues = "https://github.com/mohiuddin200/kothalipi/issues"
+Documentation = "https://github.com/mohiuddin200/kothalipi/blob/main/README.md"
 
 [project.scripts]
-speech2text-extension-service = "gnome_speech2text_service.cli:main"
+kothalipi-service = "kothalipi_service.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-gnome_speech2text_service = ["../data/*"]
+kothalipi_service = ["../data/*"]

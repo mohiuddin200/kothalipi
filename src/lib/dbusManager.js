@@ -2,13 +2,17 @@ import Gio from "gi://Gio";
 import GLib from "gi://GLib";
 import { log, getServiceBinaryPath } from "./resourceUtils.js";
 
-// D-Bus interface XML for the speech2text service
-const Speech2TextInterface = `
+// D-Bus interface XML for the kothalipi service
+const KothalipiInterface = `
 <node>
-  <interface name="org.gnome.Shell.Extensions.Speech2Text">
+  <interface name="io.github.mohiuddin200.Kothalipi">
     <method name="SetWhisperConfig">
       <arg direction="in" type="s" name="model" />
       <arg direction="in" type="s" name="device" />
+      <arg direction="out" type="b" name="success" />
+    </method>
+    <method name="SetLivePreview">
+      <arg direction="in" type="b" name="enabled" />
       <arg direction="out" type="b" name="success" />
     </method>
     <method name="StartRecording">
@@ -56,6 +60,14 @@ const Speech2TextInterface = `
       <arg type="s" name="text" />
       <arg type="b" name="success" />
     </signal>
+    <signal name="AudioLevel">
+      <arg type="s" name="recording_id" />
+      <arg type="d" name="level" />
+    </signal>
+    <signal name="PartialTranscript">
+      <arg type="s" name="recording_id" />
+      <arg type="s" name="text" />
+    </signal>
   </interface>
 </node>`;
 
@@ -72,13 +84,13 @@ export class DBusManager {
 
   async initialize() {
     try {
-      const Speech2TextProxy =
-        Gio.DBusProxy.makeProxyWrapper(Speech2TextInterface);
+      const KothalipiProxy =
+        Gio.DBusProxy.makeProxyWrapper(KothalipiInterface);
 
-      this.dbusProxy = new Speech2TextProxy(
+      this.dbusProxy = new KothalipiProxy(
         Gio.DBus.session,
-        "org.gnome.Shell.Extensions.Speech2Text",
-        "/org/gnome/Shell/Extensions/Speech2Text"
+        "io.github.mohiuddin200.Kothalipi",
+        "/io/github/mohiuddin200/Kothalipi"
       );
 
       // Test if the service is actually reachable
@@ -165,6 +177,27 @@ export class DBusManager {
         "TextTyped",
         (proxy, sender, [text, success]) => {
           handlers.onTextTyped?.(text, success);
+        }
+      )
+    );
+
+    // Emitted ~20 times a second by service 1.3.0+; older services never send it.
+    this.signalConnections.push(
+      this.dbusProxy.connectSignal(
+        "AudioLevel",
+        (proxy, sender, [recordingId, level]) => {
+          handlers.onAudioLevel?.(recordingId, level);
+        }
+      )
+    );
+
+    // A rough reading of the recent audio, sent while recording when the
+    // live preview is on.
+    this.signalConnections.push(
+      this.dbusProxy.connectSignal(
+        "PartialTranscript",
+        (proxy, sender, [recordingId, text]) => {
+          handlers.onPartialTranscript?.(recordingId, text);
         }
       )
     );
@@ -286,6 +319,20 @@ export class DBusManager {
     }
   }
 
+  /** @returns {Promise<boolean>} false when the service is too old to preview */
+  async setLivePreview(enabled) {
+    const connectionReady = await this.ensureConnection();
+    if (!connectionReady || !this.dbusProxy) return false;
+
+    try {
+      await this.dbusProxy.SetLivePreviewAsync(Boolean(enabled));
+      return Boolean(enabled);
+    } catch (e) {
+      log.debug(`Live preview is not available: ${e?.message || e}`);
+      return false;
+    }
+  }
+
   async startRecording(duration, copyToClipboard, previewMode) {
     const connectionReady = await this.ensureConnection();
     if (!connectionReady || !this.dbusProxy) {
@@ -398,7 +445,7 @@ export class DBusManager {
 
   async _startService() {
     try {
-      log.debug("Starting Speech2Text service...");
+      log.debug("Starting Kothalipi service...");
 
       const servicePath = getServiceBinaryPath();
 
@@ -431,9 +478,9 @@ export class DBusManager {
           Gio.DBus.session,
           Gio.DBusProxyFlags.NONE,
           null,
-          "org.gnome.Shell.Extensions.Speech2Text",
-          "/org/gnome/Shell/Extensions/Speech2Text",
-          "org.gnome.Shell.Extensions.Speech2Text",
+          "io.github.mohiuddin200.Kothalipi",
+          "/io/github/mohiuddin200/Kothalipi",
+          "io.github.mohiuddin200.Kothalipi",
           null
         );
 

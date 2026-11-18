@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Panel icon: voice bars running into a text cursor.
+     Symbolic icons are recoloured through `fill` only, so every shape is a
+     filled one; do not use strokes here. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <rect x="1" y="5" width="2" height="6" rx="1" fill="#222222"/>
+  <rect x="4" y="3" width="2" height="10" rx="1" fill="#222222"/>
+  <rect x="7" y="4" width="2" height="8" rx="1" fill="#222222"/>
+  <rect x="12" y="2" width="2" height="12" fill="#222222"/>
+  <rect x="10.5" y="1" width="5" height="1.5" rx="0.75" fill="#222222"/>
+  <rect x="10.5" y="13.5" width="5" height="1.5" rx="0.75" fill="#222222"/>
+</svg>

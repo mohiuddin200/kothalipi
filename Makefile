@@ -1,32 +1,36 @@
-# Speech2Text Extension - Makefile
+# Kothalipi Extension - Makefile
 # Automates common development and installation tasks
 
-EXTENSION_UUID = gnome-speech2text@kaveh.page
+EXTENSION_UUID = kothalipi@mohiuddin200.github.io
+UPSTREAM_UUID = gnome-speech2text@kaveh.page
 EXTENSION_DIR = $(HOME)/.local/share/gnome-shell/extensions/$(EXTENSION_UUID)
 SOURCE_DIR = src
 SCHEMAS_DIR = $(EXTENSION_DIR)/schemas
-SCHEMA_ID = org.gnome.shell.extensions.speech2text
+SCHEMA_ID = org.gnome.shell.extensions.kothalipi
 SERVICE_INSTALLER = service/install-service.sh
 
 # Optional: override the python interpreter used by the service installer.
 # Example: make install-service PYTHON=python3.12
 PYTHON ?=
 
-.PHONY: help install compile-schemas install-service clean clean-service package status verify-schema
+.PHONY: help check shots dev use-fork use-original install compile-schemas install-service clean clean-service package status verify-schema
 
 # Default target
 help:
-	@echo "Speech2Text Extension - Development Automation"
+	@echo "Kothalipi Extension - Development Automation"
 	@echo "=================================================="
-	@echo ""
-	@echo "🚀 For easy installation, run: ./install.sh"
 	@echo ""
 	@echo "Available targets:"
 	@echo "  setup           - Clean install + full setup of both extension and D-Bus service"
 	@echo "  clean           - Remove installed extension AND D-Bus service"
 	@echo "  clean-service   - Remove only D-Bus service only"
 	@echo "  status          - Check extension installation status"
-	@echo "  install         - Install extension + compile schemas"
+	@echo "  install         - Link src/ into GNOME Shell + compile schemas"
+	@echo "  check           - Load the fork in a headless test shell, report errors"
+	@echo "  shots           - Screenshot the pill in every state (SHOTS_DIR=...)"
+	@echo "  dev             - Open the fork in a windowed test shell"
+	@echo "  use-fork        - Run the fork in the real session (after re-login)"
+	@echo "  use-original    - Run the upstream extension in the real session"
 	@echo "  compile-schemas - Compile GSettings schemas only"
 	@echo "  install-service - Install the D-Bus service (supports PYTHON=... override)"
 	@echo "  verify-schema   - Verify schema is properly installed"
@@ -34,22 +38,36 @@ help:
 	@echo ""
 	@echo "Usage: make <target>"
 
-# Install extension files and compile schemas
+# Link the working tree into GNOME Shell and compile schemas.
+# The extension directory is a symlink to src/, so edits need no reinstall.
 install:
-	@echo "📦 Installing extension to $(EXTENSION_DIR)..."
-	@mkdir -p $(EXTENSION_DIR)
-	@cp -r $(SOURCE_DIR)/* $(EXTENSION_DIR)/
-	@rm -f $(SCHEMAS_DIR)/gschemas.compiled
-	@echo "✅ Extension files installed successfully!"
-	@echo "🔧 Compiling GSettings schemas..."
-	@glib-compile-schemas $(SCHEMAS_DIR)
-	@if [ -f "$(SCHEMAS_DIR)/gschemas.compiled" ]; then \
-		echo "✅ Schemas compiled successfully!"; \
-	else \
-		echo "❌ Schema compilation failed"; \
+	@if [ -e "$(EXTENSION_DIR)" ] && [ ! -L "$(EXTENSION_DIR)" ]; then \
+		echo "❌ $(EXTENSION_DIR) is a real directory; move it away first"; \
 		exit 1; \
 	fi
-	@echo "✅ Extension installation completed!"
+	@ln -sfn "$(CURDIR)/$(SOURCE_DIR)" "$(EXTENSION_DIR)"
+	@glib-compile-schemas --strict $(SOURCE_DIR)/schemas
+	@echo "✅ Linked $(EXTENSION_DIR) -> $(CURDIR)/$(SOURCE_DIR)"
+
+# Load the fork in a throwaway headless shell and report errors
+check:
+	@dev/shell.sh check
+
+# Play the pill through every state in a headless shell and save screenshots
+SHOTS_DIR ?= /tmp/kothalipi-shots
+shots:
+	@dev/shell.sh shots "$(SHOTS_DIR)"
+
+# Open the fork in a windowed test shell (needs mutter-dev-bin)
+dev:
+	@dev/shell.sh dev
+
+# Pick which copy runs in the real session (takes effect after re-login)
+use-fork:
+	@dev/switch.sh fork
+
+use-original:
+	@dev/switch.sh original
 
 # Compile GSettings schemas
 compile-schemas:
@@ -86,7 +104,7 @@ setup: clean install compile-schemas install-service
 
 # Install the D-Bus service (Python + venv + D-Bus registration)
 install-service:
-	@echo "🧩 Installing Speech2Text D-Bus service..."
+	@echo "🧩 Installing Kothalipi D-Bus service..."
 	@if [ ! -x "$(SERVICE_INSTALLER)" ]; then \
 		echo "❌ Service installer not found or not executable: $(SERVICE_INSTALLER)"; \
 		exit 1; \
@@ -112,29 +130,29 @@ clean:
 		echo "ℹ️  Extension not found at $(EXTENSION_DIR)"; \
 	fi
 	@echo "🧹 Removing D-Bus service..."
-	@PID=$$(ps aux | grep -E "speech2text-extension-service|speech2text_service.py" | grep -v grep | awk '{print $$2}' | head -1); \
+	@PID=$$(ps aux | grep -E "kothalipi-service|kothalipi_service.py" | grep -v grep | awk '{print $$2}' | head -1); \
 	if [ ! -z "$$PID" ]; then \
 		echo "   Found process $$PID, terminating..."; \
 		kill $$PID 2>/dev/null || true; \
 		sleep 1; \
 		echo "   Process terminated"; \
 	else \
-		echo "   No speech2text processes found"; \
+		echo "   No kothalipi processes found"; \
 	fi
-	@if [ -d "$(HOME)/.local/share/speech2text-extension-service" ]; then \
-		rm -rf $(HOME)/.local/share/speech2text-extension-service; \
+	@if [ -d "$(HOME)/.local/share/kothalipi-service" ]; then \
+		rm -rf $(HOME)/.local/share/kothalipi-service; \
 		echo "✅ Service directory removed"; \
 	else \
 		echo "ℹ️  Service directory not found"; \
 	fi
-	@if [ -f "$(HOME)/.local/share/dbus-1/services/org.gnome.Shell.Extensions.Speech2Text.service" ]; then \
-		rm $(HOME)/.local/share/dbus-1/services/org.gnome.Shell.Extensions.Speech2Text.service; \
+	@if [ -f "$(HOME)/.local/share/dbus-1/services/io.github.mohiuddin200.Kothalipi.service" ]; then \
+		rm $(HOME)/.local/share/dbus-1/services/io.github.mohiuddin200.Kothalipi.service; \
 		echo "✅ D-Bus service file removed"; \
 	else \
 		echo "ℹ️  D-Bus service file not found"; \
 	fi
-	@if [ -f "$(HOME)/.local/share/applications/speech2text-extension-service.desktop" ]; then \
-		rm $(HOME)/.local/share/applications/speech2text-extension-service.desktop; \
+	@if [ -f "$(HOME)/.local/share/applications/kothalipi-service.desktop" ]; then \
+		rm $(HOME)/.local/share/applications/kothalipi-service.desktop; \
 		echo "✅ Desktop entry removed"; \
 	else \
 		echo "ℹ️  Desktop entry not found"; \
@@ -179,29 +197,29 @@ package:
 # Clean only D-Bus service (for testing)
 clean-service:
 	@echo "🧹 Removing D-Bus service only..."
-	@PID=$$(ps aux | grep -E "speech2text-extension-service|speech2text_service.py" | grep -v grep | awk '{print $$2}' | head -1); \
+	@PID=$$(ps aux | grep -E "kothalipi-service|kothalipi_service.py" | grep -v grep | awk '{print $$2}' | head -1); \
 	if [ ! -z "$$PID" ]; then \
 		echo "   Found process $$PID, terminating..."; \
 		kill $$PID 2>/dev/null || true; \
 		sleep 1; \
 		echo "   Process terminated"; \
 	else \
-		echo "   No speech2text processes found"; \
+		echo "   No kothalipi processes found"; \
 	fi
-	@if [ -d "$(HOME)/.local/share/speech2text-extension-service" ]; then \
-		rm -rf $(HOME)/.local/share/speech2text-extension-service; \
+	@if [ -d "$(HOME)/.local/share/kothalipi-service" ]; then \
+		rm -rf $(HOME)/.local/share/kothalipi-service; \
 		echo "✅ Service directory removed"; \
 	else \
 		echo "ℹ️  Service directory not found"; \
 	fi
-	@if [ -f "$(HOME)/.local/share/dbus-1/services/org.gnome.Shell.Extensions.Speech2Text.service" ]; then \
-		rm $(HOME)/.local/share/dbus-1/services/org.gnome.Shell.Extensions.Speech2Text.service; \
+	@if [ -f "$(HOME)/.local/share/dbus-1/services/io.github.mohiuddin200.Kothalipi.service" ]; then \
+		rm $(HOME)/.local/share/dbus-1/services/io.github.mohiuddin200.Kothalipi.service; \
 		echo "✅ D-Bus service file removed"; \
 	else \
 		echo "ℹ️  D-Bus service file not found"; \
 	fi
-	@if [ -f "$(HOME)/.local/share/applications/speech2text-extension-service.desktop" ]; then \
-		rm $(HOME)/.local/share/applications/speech2text-extension-service.desktop; \
+	@if [ -f "$(HOME)/.local/share/applications/kothalipi-service.desktop" ]; then \
+		rm $(HOME)/.local/share/applications/kothalipi-service.desktop; \
 		echo "✅ Desktop entry removed"; \
 	else \
 		echo "ℹ️  Desktop entry not found"; \
@@ -229,11 +247,11 @@ status:
 	@echo "   Session: $(XDG_SESSION_TYPE)"
 	@echo ""
 	@echo "🔧 D-Bus Service Status:"
-	@SERVICE_DIR="$(HOME)/.local/share/speech2text-extension-service" && \
+	@SERVICE_DIR="$(HOME)/.local/share/kothalipi-service" && \
 	echo "   Directory: $$SERVICE_DIR" && \
 	if [ -d "$$SERVICE_DIR" ]; then \
 		echo "   ✅ Service installed"; \
-		if [ -f "$$SERVICE_DIR/speech2text-extension-service" ]; then \
+		if [ -f "$$SERVICE_DIR/kothalipi-service" ]; then \
 			echo "   ✅ Service executable found"; \
 		else \
 			echo "   ❌ Service executable missing"; \
@@ -246,7 +264,7 @@ status:
 	else \
 		echo "   ❌ Service not installed"; \
 	fi
-	@DBUS_SERVICE_FILE="$(HOME)/.local/share/dbus-1/services/org.gnome.Shell.Extensions.Speech2Text.service" && \
+	@DBUS_SERVICE_FILE="$(HOME)/.local/share/dbus-1/services/io.github.mohiuddin200.Kothalipi.service" && \
 	echo "   D-Bus service file: $$DBUS_SERVICE_FILE" && \
 	if [ -f "$$DBUS_SERVICE_FILE" ]; then \
 		echo "   ✅ D-Bus service file registered"; \
@@ -256,13 +274,13 @@ status:
 		echo "   ❌ D-Bus service file not registered"; \
 	fi
 	@echo "   Process status:" && \
-	PID=$$(ps aux | grep "speech2text-extension-service" | grep -v grep | awk '{print $$2}' | head -1); \
+	PID=$$(ps aux | grep "kothalipi-service" | grep -v grep | awk '{print $$2}' | head -1); \
 	if [ ! -z "$$PID" ]; then \
 		echo "   ✅ Service running (PID: $$PID)"; \
 		echo "   📋 Process details:" && \
 		ps -p $$PID -o pid,ppid,cmd,etime | sed 's/^/      /'; \
 		echo "   🔍 D-Bus service test:" && \
-		if dbus-send --session --dest=org.gnome.Shell.Extensions.Speech2Text --print-reply /org/gnome/Shell/Extensions/Speech2Text org.gnome.Shell.Extensions.Speech2Text.GetServiceStatus >/dev/null 2>&1; then \
+		if dbus-send --session --dest=io.github.mohiuddin200.Kothalipi --print-reply /io/github/mohiuddin200/Kothalipi io.github.mohiuddin200.Kothalipi.GetServiceStatus >/dev/null 2>&1; then \
 			echo "   ✅ D-Bus service responding correctly"; \
 		else \
 			echo "   ❌ D-Bus service not responding"; \

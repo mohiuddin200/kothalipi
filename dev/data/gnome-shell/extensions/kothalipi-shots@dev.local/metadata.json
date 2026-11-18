@@ -1,0 +1,6 @@
+{
+  "uuid": "kothalipi-shots@dev.local",
+  "name": "Kothalipi screenshot harness",
+  "description": "Development only. Drives the dictation pill through its states inside the throwaway test shell and saves screenshots. Never visible to the real session.",
+  "shell-version": ["46", "47", "48", "49", "50"]
+}

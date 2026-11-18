@@ -3,14 +3,15 @@ import GLib from "gi://GLib";
 import St from "gi://St";
 import * as Main from "resource:///org/gnome/shell/ui/main.js";
 
-import { COLORS, STYLES } from "./constants.js";
-import { createCloseButton, createHeaderLayout } from "./buttonUtils.js";
-import { createStyledLabel, createHoverButton } from "./uiUtils.js";
 import {
-  cleanupModal,
-  showModalDialog,
-  closeModalDialog,
-} from "./resourceUtils.js";
+  createButton,
+  createCard,
+  createDialog,
+  createKeycaps,
+  createWrappedLabel,
+  setKeycaps,
+} from "./dialogKit.js";
+import { showModalDialog, closeModalDialog } from "./resourceUtils.js";
 
 export class ShortcutCapture {
   constructor() {
@@ -26,64 +27,32 @@ export class ShortcutCapture {
   capture(callback) {
     this.callback = callback;
 
-    // Create modal overlay FIRST (same pattern as other dialogs)
-    this.overlay = new St.Widget({
-      style: `background-color: ${COLORS.TRANSPARENT_BLACK_70};`,
-      reactive: true,
-      can_focus: true,
-      track_hover: true,
+    const { overlay, dialog, closeButton } = createDialog({
+      title: "Set shortcut",
+      size: "narrow",
     });
-
-    // Create a modal dialog to capture new shortcut
-    this.captureWindow = new St.BoxLayout({
-      style_class: "capture-shortcut-window",
-      vertical: true,
-      style: `
-        background-color: rgba(20, 20, 20, 0.95);
-        border-radius: 12px;
-        padding: 24px;
-        min-width: 400px;
-        border: ${STYLES.DIALOG_BORDER};
-      `,
-      x_align: Clutter.ActorAlign.CENTER,
-      y_align: Clutter.ActorAlign.CENTER,
-    });
-
-    // Header with close button (matching other modals)
-    const titleContainer = new St.BoxLayout({
-      vertical: false,
-      style: "spacing: 10px;",
-      x_align: Clutter.ActorAlign.START,
-      x_expand: true,
-    });
-    const titleIcon = createStyledLabel("⌨️", "icon", "font-size: 24px;");
-    const titleLabel = createStyledLabel("Set Keyboard Shortcut", "subtitle");
-    titleContainer.add_child(titleIcon);
-    titleContainer.add_child(titleLabel);
-
-    this.closeButton = createCloseButton(28);
+    this.overlay = overlay;
+    this.captureWindow = dialog;
+    this.closeButton = closeButton;
     this.closeButton.connect("clicked", () => {
       this._cancel();
     });
 
-    const headerBox = createHeaderLayout(titleContainer, this.closeButton);
-    this.captureWindow.add_child(headerBox);
-
     // Instructions
-    const instructionLabel = createStyledLabel(
-      "Press the key combination you want to use",
-      "normal",
-      `color: ${COLORS.LIGHT_GRAY}; margin-top: 15px; margin-bottom: 5px;`
+    const instructions = new St.BoxLayout({
+      style_class: "kothalipi-stack",
+      vertical: true,
+    });
+    instructions.add_child(
+      createWrappedLabel("Press the key combination you want to use", "kothalipi-text")
     );
-    const hintLabel = createStyledLabel(
-      "Use modifier keys (Ctrl, Alt, Shift, Super) + a letter or key",
-      "description"
+    instructions.add_child(
+      createWrappedLabel(
+        "Use modifier keys (Ctrl, Alt, Shift, Super) + a letter or key",
+        "kothalipi-muted"
+      )
     );
-
-    this.captureWindow.add_child(instructionLabel);
-    this.captureWindow.add_child(hintLabel);
-
-    this.overlay.add_child(this.captureWindow);
+    this.captureWindow.add_child(instructions);
 
     // Clear any existing centering timeout
     if (this.centerTimeoutId) {
@@ -104,33 +73,20 @@ export class ShortcutCapture {
       super: false,
     };
 
-    // Status display
-    const statusLabel = createStyledLabel(
-      "Waiting for key combination...",
-      "normal",
-      `
-        color: ${COLORS.WARNING};
-        font-size: 14px;
-        margin-top: 15px;
-        background-color: rgba(255, 140, 0, 0.1);
-        padding: 10px 15px;
-        border-radius: 6px;
-        border: 1px solid rgba(255, 140, 0, 0.3);
-      `
-    );
-    this.captureWindow.add_child(statusLabel);
+    // The keys held so far
+    const heldKeys = createKeycaps();
+    heldKeys.x_align = Clutter.ActorAlign.CENTER;
+    heldKeys.x_expand = true;
+    const well = new St.BoxLayout({ style_class: "kothalipi-capture-well" });
+    well.add_child(heldKeys);
+    this.captureWindow.add_child(createCard([well]));
 
     // Cancel button
     const buttonBox = new St.BoxLayout({
       vertical: false,
-      style: "margin-top: 20px;",
-      x_align: Clutter.ActorAlign.CENTER,
+      x_align: Clutter.ActorAlign.END,
     });
-    const cancelButton = createHoverButton(
-      "Cancel",
-      COLORS.SECONDARY,
-      COLORS.DANGER
-    );
+    const cancelButton = createButton("Cancel");
     cancelButton.connect("clicked", () => {
       this._cancel();
     });
@@ -145,10 +101,9 @@ export class ShortcutCapture {
       if (modifierState.alt) parts.push("Alt");
       if (modifierState.super) parts.push("Super");
 
-      let display =
-        parts.length > 0 ? parts.join(" + ") : "Waiting for key combination...";
-      statusLabel.set_text(display);
+      setKeycaps(heldKeys, parts, "Waiting for key combination...");
     };
+    updateDisplay();
 
     // Modal overlay click handler (close on backdrop click)
     this.clickHandler = this.overlay.connect(

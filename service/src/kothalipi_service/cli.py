@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Command-line interface for the Speech2Text Service.
+Command-line interface for the Kothalipi Service.
 
-This is the entry point that gets called when users run 'speech2text-extension-service'.
+This is the entry point that gets called when users run 'kothalipi-service'.
 """
 
 import sys
@@ -13,7 +13,7 @@ from .service import main as service_main
 def main():
     """Main entry point for the CLI."""
     parser = argparse.ArgumentParser(
-        description="Speech2Text D-Bus Service",
+        description="Kothalipi D-Bus Service",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
         """

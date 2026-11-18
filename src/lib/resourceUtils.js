@@ -6,7 +6,7 @@ import GLib from "gi://GLib";
 let _debugEnabled = null;
 export function isDebugEnabled() {
   if (_debugEnabled === null) {
-    const v = String(GLib.getenv("SPEECH2TEXT_DEBUG") || "").toLowerCase();
+    const v = String(GLib.getenv("KOTHALIPI_DEBUG") || "").toLowerCase();
     _debugEnabled = v === "1" || v === "true" || v === "yes";
   }
   return _debugEnabled;
@@ -88,7 +88,7 @@ export function centerWidgetOnMonitor(
     fallbackWidth = 400,
     fallbackHeight = 300,
     onComplete = null,
-    sourceName = "speech2text-extension: centerWidgetOnMonitor",
+    sourceName = "kothalipi: centerWidgetOnMonitor",
   } = {}
 ) {
   const timeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 10, () => {
@@ -175,38 +175,19 @@ export function cleanupModal(overlay, handlers = {}, { destroy = true } = {}) {
 }
 
 /**
- * Remove a widget from GNOME Shell chrome (if present) and optionally destroy it.
- * Intended for non-modal chrome widgets (e.g. floating progress toasts).
- */
-export function cleanupChromeWidget(widget, { destroy = true } = {}) {
-  if (!widget) return false;
-
-  try {
-    if (widget.get_parent?.()) {
-      Main.layoutManager.removeChrome(widget);
-    }
-    if (destroy && widget.destroy) widget.destroy();
-    return true;
-  } catch (e) {
-    log.warn("Failed to cleanup chrome widget:", e?.message || String(e));
-    return false;
-  }
-}
-
-/**
  * Get the service installation directory path.
- * @returns {string} Path to ~/.local/share/speech2text-extension-service
+ * @returns {string} Path to ~/.local/share/kothalipi-service
  */
 export function getServiceDir() {
-  return `${GLib.get_home_dir()}/.local/share/speech2text-extension-service`;
+  return `${GLib.get_home_dir()}/.local/share/kothalipi-service`;
 }
 
 /**
  * Get the service binary executable path.
- * @returns {string} Path to the speech2text-extension-service binary
+ * @returns {string} Path to the kothalipi-service binary
  */
 export function getServiceBinaryPath() {
-  return `${getServiceDir()}/speech2text-extension-service`;
+  return `${getServiceDir()}/kothalipi-service`;
 }
 
 /**
@@ -228,10 +209,29 @@ export function showModalDialog(overlay, dialogWidget, options = {}) {
   overlay.set_position(monitor.x, monitor.y);
   overlay.set_size(monitor.width, monitor.height);
 
+  // Stay invisible until the dialog has been measured and centred, then
+  // let the scrim fade while the dialog settles into place.
+  overlay.opacity = 0;
+  dialogWidget.set_pivot_point(0.5, 0.5);
+
   const timeoutId = centerWidgetOnMonitor(dialogWidget, monitor, {
     fallbackWidth: options.fallbackWidth || 600,
     fallbackHeight: options.fallbackHeight || 400,
     onComplete: () => {
+      dialogWidget.set_scale(0.97, 0.97);
+      dialogWidget.translation_y = 8;
+      overlay.ease({
+        opacity: 255,
+        duration: 160,
+        mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+      });
+      dialogWidget.ease({
+        scale_x: 1,
+        scale_y: 1,
+        translation_y: 0,
+        duration: 260,
+        mode: Clutter.AnimationMode.EASE_OUT_EXPO,
+      });
       if (options.onComplete) options.onComplete();
     },
   });
@@ -251,15 +251,34 @@ export function showModalDialog(overlay, dialogWidget, options = {}) {
  * @param {number|null} handlers.keyReleaseHandler - Key release handler ID (optional)
  * @param {number|null} handlers.clickHandler - Click handler ID
  * @param {number|null} centerTimeoutId - Center timeout ID to remove
+ * @param {Object} options
+ * @param {boolean} options.animate - Fade out before removing. Pass false
+ *   when the extension is being disabled and nothing may outlive the call.
  */
-export function closeModalDialog(overlay, handlers, centerTimeoutId) {
+export function closeModalDialog(
+  overlay,
+  handlers,
+  centerTimeoutId,
+  { animate = true } = {}
+) {
   if (centerTimeoutId) {
     GLib.Source.remove(centerTimeoutId);
   }
 
-  if (overlay) {
+  if (!overlay) return;
+
+  if (!animate) {
     cleanupModal(overlay, handlers);
+    return;
   }
+
+  overlay.reactive = false;
+  overlay.ease({
+    opacity: 0,
+    duration: 120,
+    mode: Clutter.AnimationMode.EASE_OUT_QUAD,
+    onStopped: () => cleanupModal(overlay, handlers),
+  });
 }
 
 /**
@@ -289,51 +308,4 @@ export function setupModalEventHandlers(overlay, onClose) {
   });
 
   return { keyPressHandler, clickHandler };
-}
-
-/**
- * GNOME-modal teardown helper used by `RecordingDialog.close()`.
- *
- * IMPORTANT: This function intentionally mirrors the existing teardown logic
- * (removeChrome → fallback parent removal paths → destroy), because GNOME Shell
- * can be very sensitive across versions. Keep changes minimal.
- */
-export function cleanupRecordingModal(modal, { isGNOME48Plus } = {}) {
-  if (!modal) return;
-
-  // Remove from chrome if it has a parent
-  const parent = modal.get_parent?.();
-  if (parent) {
-    try {
-      Main.layoutManager.removeChrome(modal);
-      log.debug("Modal removed from chrome successfully");
-    } catch (chromeError) {
-      log.debug(
-        "Chrome removal failed, trying direct parent removal:",
-        chromeError?.message || String(chromeError)
-      );
-      // NOTE: keep fallback removal; GNOME Shell behavior can vary across versions.
-      if (isGNOME48Plus) modal.hide?.();
-      try {
-        parent.remove_child(modal);
-        log.debug("Modal removed from parent directly");
-      } catch (parentError) {
-        log.debug(
-          "Direct parent removal also failed:",
-          parentError?.message || String(parentError)
-        );
-      }
-    }
-  }
-
-  // Finally, destroy the modal
-  try {
-    modal.destroy?.();
-    log.debug("Modal destroyed successfully");
-  } catch (destroyError) {
-    log.debug(
-      "Modal destruction failed:",
-      destroyError?.message || String(destroyError)
-    );
-  }
 }

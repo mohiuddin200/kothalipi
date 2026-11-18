@@ -4,13 +4,7 @@ import GLib from "gi://GLib";
 import St from "gi://St";
 import * as Main from "resource:///org/gnome/shell/ui/main.js";
 
-import { COLORS, STYLES } from "./constants.js";
-import { createHorizontalBox, createStyledLabel } from "./uiUtils.js";
-import {
-  createCenteredBox,
-  createHeaderLayout,
-  createCloseButton,
-} from "./buttonUtils.js";
+import { createCard, createDialog, createWrappedLabel } from "./dialogKit.js";
 import {
   log,
   readInstalledServiceConfig,
@@ -33,6 +27,8 @@ export class ServiceSetupDialog {
     this._installStateKnown = false;
 
     // UI refs
+    this.statusBox = null;
+    this.statusIcon = null;
     this.statusLabel = null;
 
     this._buildDialog();
@@ -49,142 +45,75 @@ export class ServiceSetupDialog {
 
     if (this._installStateKnown) {
       this.statusLabel.set_text(this._getInstalledConfigText());
-      this.statusLabel.set_style(`
-        font-size: 14px;
-        color: ${COLORS.INFO};
-        margin: 10px 0;
-        padding: 10px;
-        background-color: rgba(23, 162, 184, 0.1);
-        border-radius: 5px;
-      `);
+      this.statusBox.remove_style_class_name("kothalipi-status-warning");
+      this.statusIcon.hide();
     } else {
       this.statusLabel.set_text(
         `Service Status: ${this.errorMessage || "Service not installed"}`
       );
-      this.statusLabel.set_style(`
-        font-size: 14px;
-        color: ${COLORS.DANGER};
-        margin: 10px 0;
-        padding: 10px;
-        background-color: rgba(255, 0, 0, 0.1);
-        border-radius: 5px;
-      `);
+      this.statusBox.add_style_class_name("kothalipi-status-warning");
+      this.statusIcon.show();
     }
   }
 
   _buildDialog() {
-    // Create modal overlay
-    this.overlay = new St.Widget({
-      style: "background-color: rgba(0,0,0,0.8);",
-      reactive: true,
-      can_focus: true,
-      track_hover: true,
+    const { overlay, dialog, closeButton } = createDialog({
+      title: "Kothalipi Service Setup",
+      size: "wide",
     });
-
-    // Main dialog container (matching settings dialog styling exactly)
-    this.dialogContainer = new St.BoxLayout({
-      style_class: "setup-dialog-window",
-      vertical: true,
-      style: `
-        background-color: rgba(20, 20, 20, 0.95);
-        border-radius: 12px;
-        padding: 24px;
-        min-width: 600px;
-        max-width: 700px;
-        border: ${STYLES.DIALOG_BORDER};
-      `,
-      x_align: Clutter.ActorAlign.CENTER,
-      y_align: Clutter.ActorAlign.CENTER,
-    });
-
-    // Header with close button (matching settings dialog pattern)
-    let titleContainer = createCenteredBox(false, "15px");
-    titleContainer.set_x_align(Clutter.ActorAlign.START);
-    titleContainer.set_x_expand(true);
-
-    const headerIcon = createStyledLabel("⚠️", "icon", "font-size: 36px;");
-    const headerText = createStyledLabel(
-      "Speech2Text Service Setup",
-      "title",
-      `color: ${COLORS.PRIMARY};`
-    );
-
-    titleContainer.add_child(headerIcon);
-    titleContainer.add_child(headerText);
-
-    // Create top-right close button
-    this.closeButton = createCloseButton(32);
-    const headerBox = createHeaderLayout(titleContainer, this.closeButton);
+    this.overlay = overlay;
+    this.dialogContainer = dialog;
+    this.closeButton = closeButton;
 
     // Status message (installed state)
-    this.statusLabel = new St.Label({
-      text: "",
-      style: "",
+    this.statusBox = new St.BoxLayout({ style_class: "kothalipi-status" });
+    this.statusBox.request_mode = Clutter.RequestMode.HEIGHT_FOR_WIDTH;
+    this.statusIcon = new St.Icon({
+      icon_name: "dialog-warning-symbolic",
+      style_class: "kothalipi-status-icon",
+      y_align: Clutter.ActorAlign.START,
     });
+    this.statusLabel = createWrappedLabel("", "");
+    this.statusBox.add_child(this.statusIcon);
+    this.statusBox.add_child(this.statusLabel);
     this._refreshStatusLabel();
 
+    const body = new St.BoxLayout({ style_class: "kothalipi-stack", vertical: true });
+
     // Main explanation
-    const explanation = `Speech2Text requires a background service for speech processing.
-This service is installed separately from the extension (following GNOME guidelines).
-Installation instructions are maintained in the project repository.`;
-    const explanationText = new St.Label({
-      text: explanation,
-      style: `
-        font-size: 16px;
-        color: ${COLORS.WHITE};
-        margin: 15px 0;
-        line-height: 1.5;
-      `,
-    });
+    const explanation =
+      "Kothalipi requires a background service for speech processing. " +
+      "This service is installed separately from the extension (following GNOME guidelines). " +
+      "Installation instructions are maintained in the project repository.";
+    body.add_child(createWrappedLabel(explanation, "kothalipi-text"));
 
     // Link to manual instructions on GitHub
-    const manualTitle = new St.Label({
-      text: "Manual Installation:",
-      style: `
-        font-size: 16px;
-        font-weight: bold;
-        color: ${COLORS.INFO};
-        margin: 20px 0 10px 0;
-      `,
-    });
-
-    const manualText = new St.Label({
-      text: "For installation instructions, visit the GitHub repository:",
-      style: `font-size: 14px; color: ${COLORS.WHITE}; margin: 5px 0;`,
-    });
+    body.add_child(
+      new St.Label({ text: "Manual Installation:", style_class: "kothalipi-subhead" })
+    );
+    body.add_child(
+      createWrappedLabel(
+        "For installation instructions, visit the GitHub repository:",
+        "kothalipi-text"
+      )
+    );
 
     const repoLink = new St.Button({
-      label: "https://github.com/kavehtehrani/speech2text-extension",
-      style: `
-        background-color: transparent;
-        border: none;
-        color: ${COLORS.INFO};
-        font-size: 14px;
-        padding: 0;
-        margin: 5px 0 10px 0;
-        text-decoration: underline;
-      `,
+      label: "https://github.com/mohiuddin200/kothalipi",
+      style_class: "kothalipi-link",
+      can_focus: true,
+      track_hover: true,
       x_align: Clutter.ActorAlign.START,
     });
 
     repoLink.connect("clicked", () => {
-      this._openUrl("https://github.com/kavehtehrani/speech2text-extension");
+      this._openUrl("https://github.com/mohiuddin200/kothalipi");
     });
-
-    // Action buttons
-    const buttonBox = createHorizontalBox();
-    buttonBox.set_x_align(Clutter.ActorAlign.CENTER);
+    body.add_child(repoLink);
 
     // Assemble dialog
-    this.dialogContainer.add_child(headerBox);
-    this.dialogContainer.add_child(this.statusLabel);
-    this.dialogContainer.add_child(explanationText);
-    this.dialogContainer.add_child(manualTitle);
-    this.dialogContainer.add_child(manualText);
-    this.dialogContainer.add_child(repoLink);
-    this.dialogContainer.add_child(buttonBox);
-
-    this.overlay.add_child(this.dialogContainer);
+    this.dialogContainer.add_child(createCard([this.statusBox]));
+    this.dialogContainer.add_child(body);
 
     // Close button handler
     this.closeButton.connect("clicked", () => this.close());

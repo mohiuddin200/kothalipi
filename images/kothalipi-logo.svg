@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Kothalipi app tile: voice bars running into a text cursor, light red on black. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <rect width="256" height="256" rx="56" fill="#111214"/>
+  <g transform="translate(48 48) scale(10)" fill="#ff6f61">
+    <rect x="1" y="5" width="2" height="6" rx="1"/>
+    <rect x="4" y="3" width="2" height="10" rx="1"/>
+    <rect x="7" y="4" width="2" height="8" rx="1"/>
+    <rect x="12" y="2" width="2" height="12"/>
+    <rect x="10.5" y="1" width="5" height="1.5" rx="0.75"/>
+    <rect x="10.5" y="13.5" width="5" height="1.5" rx="0.75"/>
+  </g>
+</svg>

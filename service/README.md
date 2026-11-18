@@ -1,6 +1,10 @@
-# Speech2Text Service
+# Kothalipi Service
 
-A D-Bus service that provides speech-to-text functionality for the GNOME Shell Speech2Text extension.
+> Part of [Kothalipi](https://github.com/mohiuddin200/kothalipi), a fork of
+> [Speech2Text](https://github.com/kavehtehrani/speech2text-extension) by Kaveh Tehrani.
+> `kothalipi-service` is not on PyPI yet: where this document says `--pypi`, use `--local` from a clone for now.
+
+A D-Bus service that provides speech-to-text functionality for the GNOME Shell Kothalipi extension.
 
 ## Overview
 
@@ -26,10 +30,10 @@ This service requires several system packages to be installed (e.g. ffmpeg, clip
 The service is available on PyPI and is typically installed into a per-user virtual environment by the extension’s installer.
 
 ```bash
-pip install speech2text-extension-service
+pip install kothalipi-service
 ```
 
-**PyPI Package**: [speech2text-extension-service](https://pypi.org/project/speech2text-extension-service/)
+**PyPI Package**: [kothalipi-service](https://pypi.org/project/kothalipi-service/)
 
 Or from the source repository:
 
@@ -81,14 +85,14 @@ The model name is recorded for UI display purposes. The actual model files are d
 
 **CPU Thread Count**
 
-CPU inference uses up to four threads by default. Set `SPEECH2TEXT_CPU_THREADS` before the service starts to override
+CPU inference uses up to four threads by default. Set `KOTHALIPI_CPU_THREADS` before the service starts to override
 the default. The value is clamped between one and the number of available CPUs; invalid values fall back to four.
 
 For example, with a systemd user session:
 
 ```bash
 mkdir -p ~/.config/environment.d
-printf 'SPEECH2TEXT_CPU_THREADS=12\n' > ~/.config/environment.d/90-speech2text.conf
+printf 'KOTHALIPI_CPU_THREADS=12\n' > ~/.config/environment.d/90-kothalipi.conf
 ```
 
 Log out and back in after changing the file so the D-Bus-activated service inherits the new value.
@@ -120,11 +124,11 @@ Log out and back in after changing the file so the D-Bus-activated service inher
 
 The installer will:
 
-- Create a per-user virtual environment under `~/.local/share/speech2text-extension-service/venv`
-- Install the `speech2text-extension-service` package with appropriate ML dependencies
-- Register the D-Bus service at `~/.local/share/dbus-1/services/org.gnome.Shell.Extensions.Speech2Text.service`
-- Create a desktop entry at `~/.local/share/applications/speech2text-extension-service.desktop`
-- Record installation metadata in `~/.local/share/speech2text-extension-service/install-state.conf` (model, device, timestamp)
+- Create a per-user virtual environment under `~/.local/share/kothalipi-service/venv`
+- Install the `kothalipi-service` package with appropriate ML dependencies
+- Register the D-Bus service at `~/.local/share/dbus-1/services/io.github.mohiuddin200.Kothalipi.service`
+- Create a desktop entry at `~/.local/share/applications/kothalipi-service.desktop`
+- Record installation metadata in `~/.local/share/kothalipi-service/install-state.conf` (model, device, timestamp)
 
 **Note**: To change the model or device after installation, you must re-run the installer with the new options. The installer rebuilds the virtual environment from scratch, ensuring clean dependency management.
 
@@ -136,10 +140,10 @@ The service is D-Bus activated and starts automatically when requested by the ex
 
 ```bash
 # If the entry point is on PATH (pip install)
-speech2text-extension-service
+kothalipi-service
 
 # Or via the per-user wrapper created by the installer
-~/.local/share/speech2text-extension-service/speech2text-extension-service
+~/.local/share/kothalipi-service/kothalipi-service
 ```
 
 ### Configuration
@@ -148,7 +152,7 @@ The service uses OpenAI's Whisper model locally for speech recognition. No API k
 
 **Model and Device Configuration**
 
-The Whisper model and processing device (CPU/GPU) are configured during service installation using the installer flags (see [D-Bus Registration](#d-bus-registration) above). The extension reads this configuration from `~/.local/share/speech2text-extension-service/install-state.conf` to display the current settings in the setup dialog.
+The Whisper model and processing device (CPU/GPU) are configured during service installation using the installer flags (see [D-Bus Registration](#d-bus-registration) above). The extension reads this configuration from `~/.local/share/kothalipi-service/install-state.conf` to display the current settings in the setup dialog.
 
 To change the model or device, reinstall the service with the desired options. The installer will rebuild the virtual environment with the appropriate dependencies.
 
@@ -186,4 +190,4 @@ This project is licensed under the GPL-3.0-or-later license. See the LICENSE fil
 ## Contributing
 
 Contributions are welcome! Please see the main repository for contribution guidelines:
-https://github.com/kavehtehrani/speech2text-extension
+https://github.com/mohiuddin200/kothalipi

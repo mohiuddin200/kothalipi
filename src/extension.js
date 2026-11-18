@@ -5,7 +5,7 @@ import { ServiceManager } from "./lib/serviceManager.js";
 import { KeybindingManager } from "./lib/keybindingManager.js";
 import { log } from "./lib/resourceUtils.js";
 
-export default class Speech2TextExtension extends Extension {
+export default class KothalipiExtension extends Extension {
   constructor(metadata) {
     super(metadata);
 
@@ -17,8 +17,8 @@ export default class Speech2TextExtension extends Extension {
   }
 
   async enable() {
-    log.debug("Enabling Speech2Text extension (D-Bus version)");
-    this.settings = this.getSettings("org.gnome.shell.extensions.speech2text");
+    log.debug("Enabling Kothalipi extension (D-Bus version)");
+    this.settings = this.getSettings("org.gnome.shell.extensions.kothalipi");
 
     this.serviceManager = new ServiceManager();
     await this.serviceManager.initialize();
@@ -43,7 +43,9 @@ export default class Speech2TextExtension extends Extension {
   _setupSignalHandlers() {
     this.serviceManager.connectSignals({
       onTranscriptionReady: (recordingId, text) => {
-        this.recordingController.handleTranscriptionReady(recordingId, text);
+        this.recordingController
+          .handleTranscriptionReady(recordingId, text)
+          .catch((e) => console.error("Error handling transcription:", e));
       },
       onRecordingError: (recordingId, errorMessage) => {
         this.recordingController.handleRecordingError(
@@ -53,6 +55,12 @@ export default class Speech2TextExtension extends Extension {
       },
       onRecordingStopped: (recordingId, reason) => {
         this.recordingController.handleRecordingStopped(recordingId, reason);
+      },
+      onAudioLevel: (recordingId, level) => {
+        this.recordingController.handleAudioLevel(recordingId, level);
+      },
+      onPartialTranscript: (recordingId, text) => {
+        this.recordingController.handlePartialTranscript(recordingId, text);
       },
     });
   }
@@ -93,12 +101,13 @@ export default class Speech2TextExtension extends Extension {
 
       if (!this.settings) {
         this.settings = this.getSettings(
-          "org.gnome.shell.extensions.speech2text"
+          "org.gnome.shell.extensions.kothalipi"
         );
       }
 
       if (!this.uiManager) {
         this.uiManager = new UIManager(this);
+        this.uiManager.initialize();
       }
 
       if (!this.serviceManager) {
@@ -129,7 +138,7 @@ export default class Speech2TextExtension extends Extension {
   }
 
   disable() {
-    log.debug("Disabling Speech2Text extension (D-Bus version)");
+    log.debug("Disabling Kothalipi extension (D-Bus version)");
 
     // Clean up components in reverse order of initialization
     if (this.keybindingManager) {

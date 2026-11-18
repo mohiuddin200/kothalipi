@@ -20,11 +20,18 @@ import whisper
 from dbus_next.aio import MessageBus
 from dbus_next.service import ServiceInterface, method, signal as dbus_signal
 
-BUS_NAME = "org.gnome.Shell.Extensions.Speech2Text"
-OBJECT_PATH = "/org/gnome/Shell/Extensions/Speech2Text"
-INTERFACE_NAME = "org.gnome.Shell.Extensions.Speech2Text"
-CPU_THREADS_ENV = "SPEECH2TEXT_CPU_THREADS"
+BUS_NAME = "io.github.mohiuddin200.Kothalipi"
+OBJECT_PATH = "/io/github/mohiuddin200/Kothalipi"
+INTERFACE_NAME = "io.github.mohiuddin200.Kothalipi"
+CPU_THREADS_ENV = "KOTHALIPI_CPU_THREADS"
 DEFAULT_CPU_THREADS = 4
+
+# Live preview: a rough transcript of the most recent audio while recording.
+SAMPLE_RATE = 16000
+PREVIEW_WINDOW_SECONDS = 12  # how much recent audio each pass looks at
+PREVIEW_MIN_SECONDS = 1.0  # do not guess from less audio than this
+PREVIEW_PAUSE_SECONDS = 0.4  # breathing room between passes
+PREVIEW_SILENCE_RMS = 0.002  # below this the window is treated as silence
 
 
 def _get_cpu_thread_count() -> int:
@@ -48,7 +55,7 @@ if TYPE_CHECKING:
     class bas: ...
 
 
-class Speech2TextService(ServiceInterface):
+class KothalipiService(ServiceInterface):
     """D-Bus service for speech-to-text functionality (dbus-next/asyncio)."""
 
     def __init__(self, loop: asyncio.AbstractEventLoop):
@@ -60,13 +67,18 @@ class Speech2TextService(ServiceInterface):
         self.whisper_model = None
         self.whisper_model_name = "base"
         self.whisper_device = "cpu"  # "cpu" or "gpu" (maps to whisper device "cpu"/"cuda")
+        # Off until an extension asks for it, so older extensions that would
+        # not show the text do not pay for it.
+        self.live_preview = False
+        # The preview and the final transcription share one model.
+        self._model_lock = threading.Lock()
         self.dependencies_checked = False
         self.missing_deps = []
 
         # Initialize syslog for proper journalctl logging
-        syslog.openlog("speech2text-extension-service", syslog.LOG_PID, syslog.LOG_USER)
-        syslog.syslog(syslog.LOG_INFO, "Speech2Text D-Bus service started")
-        print("Speech2Text D-Bus service started")
+        syslog.openlog("kothalipi-service", syslog.LOG_PID, syslog.LOG_USER)
+        syslog.syslog(syslog.LOG_INFO, "Kothalipi D-Bus service started")
+        print("Kothalipi D-Bus service started")
 
     def _validate_whisper_config(self, model: str, device: str) -> tuple[str, str]:
         allowed_models = {
@@ -160,6 +172,134 @@ class Speech2TextService(ServiceInterface):
                 print(f"Failed to load Whisper model: {e}")
                 raise e
         return self.whisper_model
+
+    @staticmethod
+    def _level_from_samples(samples) -> float:
+        """Map 16-bit PCM samples to a perceptual 0..1 level (-50 dBFS..-12 dBFS)."""
+        if not samples:
+            return 0.0
+        sumsq = 0.0
+        for s in samples:
+            sumsq += float(s) * float(s)
+        rms = math.sqrt(sumsq / len(samples)) / 32768.0
+        if rms <= 0.0:
+            return 0.0
+        db = 20.0 * math.log10(rms)
+        return max(0.0, min(1.0, (db + 50.0) / 38.0))
+
+    def _monitor_audio_level(self, recording_id, audio_file, process):
+        """Tail the growing WAV file and emit AudioLevel while ffmpeg records."""
+        data_offset = None
+        position = 0
+        try:
+            with open(audio_file, "rb") as f:
+                while process.poll() is None:
+                    if data_offset is None:
+                        f.seek(0)
+                        header = f.read(512)
+                        marker = header.find(b"data")
+                        if marker < 0:
+                            time.sleep(0.02)
+                            continue
+                        # "data" + 4-byte chunk size, then PCM samples
+                        data_offset = marker + 8
+                        position = data_offset
+
+                    f.seek(position)
+                    chunk = f.read()
+                    usable = len(chunk) - (len(chunk) % 2)
+                    if usable:
+                        position += usable
+                        samples = array("h")
+                        # Only the most recent ~50 ms (16 kHz mono) matters.
+                        samples.frombytes(chunk[max(0, usable - 1600) : usable])
+                        level = self._level_from_samples(samples)
+                        self._emit_threadsafe(self.AudioLevel, recording_id, level)
+                    time.sleep(0.04)
+        except Exception as e:
+            syslog.syslog(syslog.LOG_DEBUG, f"Audio level monitor stopped: {e}")
+
+    @staticmethod
+    def _read_recent_audio(audio_file, seconds):
+        """The last `seconds` of a growing 16 kHz mono WAV as float32, or None."""
+        import numpy as np
+
+        with open(audio_file, "rb") as f:
+            marker = f.read(512).find(b"data")
+            if marker < 0:
+                return None
+            data_offset = marker + 8  # "data" + 4-byte chunk size, then PCM
+            size = os.fstat(f.fileno()).st_size
+            start = max(data_offset, size - int(seconds * SAMPLE_RATE) * 2)
+            start -= (start - data_offset) % 2
+            f.seek(start)
+            raw = f.read()
+        raw = raw[: len(raw) - (len(raw) % 2)]
+        if not raw:
+            return None
+        return np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+
+    def _preview_transcript(self, recording_id, audio_file, process):
+        """Emit PartialTranscript with a quick, rough reading of the recent audio.
+
+        This only tells the speaker that they are being heard. The text that
+        gets delivered still comes from the full pass in _transcribe_audio.
+        """
+        recording_info = self.active_recordings.get(recording_id)
+        if not recording_info:
+            return
+        try:
+            import numpy as np
+
+            # Load the model now, so the first words do not wait for it.
+            with self._model_lock:
+                model = self._load_whisper_model()
+            use_fp16 = self.whisper_device == "gpu"
+            language = None
+            last_text = ""
+            seen_samples = 0
+
+            def recording():
+                return process.poll() is None and not recording_info.get("stop_requested")
+
+            while recording():
+                time.sleep(PREVIEW_PAUSE_SECONDS)
+                audio = self._read_recent_audio(audio_file, PREVIEW_WINDOW_SECONDS)
+                if audio is None or len(audio) < PREVIEW_MIN_SECONDS * SAMPLE_RATE:
+                    continue
+                total = os.path.getsize(audio_file) // 2
+                if total - seen_samples < SAMPLE_RATE // 2:
+                    continue  # less than half a second of new audio
+                seen_samples = total
+                if float(np.sqrt(np.mean(audio * audio))) < PREVIEW_SILENCE_RMS:
+                    continue
+
+                with self._model_lock:
+                    if not recording():
+                        break
+                    result = model.transcribe(
+                        audio,
+                        fp16=use_fp16,
+                        language=language,
+                        temperature=0.0,  # one greedy pass, no retries
+                        condition_on_previous_text=False,
+                        verbose=None,
+                    )
+                # Detecting the language costs a pass of its own; do it once.
+                language = language or result.get("language")
+                text = " ".join(
+                    " ".join(
+                        segment["text"].strip()
+                        for segment in result.get("segments", [])
+                        if segment.get("no_speech_prob", 0.0) < 0.6
+                        and segment.get("compression_ratio", 0.0) < 2.4
+                    ).split()
+                )
+                if text and text != last_text and recording():
+                    last_text = text
+                    self._emit_threadsafe(self.PartialTranscript, recording_id, text)
+        except Exception as e:
+            syslog.syslog(syslog.LOG_DEBUG, f"Live preview stopped: {e}")
 
     def _wav_rms_normalized(self, wav_path: str) -> float:
         """
@@ -475,6 +615,18 @@ class Speech2TextService(ServiceInterface):
                 syslog.syslog(syslog.LOG_ERR, f"FFmpeg stderr: {stderr_output}")
                 raise Exception(f"FFmpeg failed to start: {stderr_output}")
 
+            threading.Thread(
+                target=self._monitor_audio_level,
+                args=(recording_id, audio_file, process),
+                daemon=True,
+            ).start()
+            if self.live_preview:
+                threading.Thread(
+                    target=self._preview_transcript,
+                    args=(recording_id, audio_file, process),
+                    daemon=True,
+                ).start()
+
             # Wait for process or manual stop
             start_time = time.time()
             min_recording_time = 2.0
@@ -629,10 +781,12 @@ class Speech2TextService(ServiceInterface):
             syslog.syslog(syslog.LOG_INFO, f"Starting transcription for recording {recording_id}")
             started = time.time()
 
-            model = self._load_whisper_model()
             # fp16 is only meaningful/beneficial on GPU; keep it off for CPU.
             use_fp16 = self.whisper_device == "gpu"
-            result = model.transcribe(audio_file, fp16=use_fp16)
+            # A live preview pass may still be finishing on the same model.
+            with self._model_lock:
+                model = self._load_whisper_model()
+                result = model.transcribe(audio_file, fp16=use_fp16)
             text = result["text"].strip()
 
             if not text:
@@ -708,6 +862,12 @@ class Speech2TextService(ServiceInterface):
         except Exception as e:
             syslog.syslog(syslog.LOG_ERR, f"Failed to set Whisper config: {e}")
             return False
+
+    @method()
+    def SetLivePreview(self, enabled: "b") -> "b":
+        """Turn the rough transcript sent while recording on or off."""
+        self.live_preview = bool(enabled)
+        return True
 
     @method()
     def StartRecording(self, duration: "i", copy_to_clipboard: "b", preview_mode: "b") -> "s":
@@ -862,6 +1022,14 @@ class Speech2TextService(ServiceInterface):
     def TextTyped(self, text: "s", success: "b") -> "sb":
         return [text, success]
 
+    @dbus_signal()
+    def AudioLevel(self, recording_id: "s", level: "d") -> "sd":
+        return [recording_id, level]
+
+    @dbus_signal()
+    def PartialTranscript(self, recording_id: "s", text: "s") -> "ss":
+        return [recording_id, text]
+
     def shutdown(self):
         """Attempt graceful shutdown of active recordings."""
         for recording_id, recording_info in list(self.active_recordings.items()):
@@ -884,13 +1052,13 @@ class Speech2TextService(ServiceInterface):
 
 async def _async_main():
     loop = asyncio.get_running_loop()
-    service = Speech2TextService(loop)
+    service = KothalipiService(loop)
 
     bus = await MessageBus().connect()
     bus.export(OBJECT_PATH, service)
     await bus.request_name(BUS_NAME)
 
-    print("Starting Speech2Text D-Bus service main loop (asyncio)...")
+    print("Starting Kothalipi D-Bus service main loop (asyncio)...")
 
     def _handle_shutdown(signum=None):
         print(f"Received signal {signum}, shutting down...")
