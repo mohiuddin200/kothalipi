@@ -1,3 +1,9 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+//
+// Kothalipi: dictation for GNOME Shell.
+// A fork of Speech2Text by Kaveh Tehrani and contributors,
+// https://github.com/kavehtehrani/speech2text-extension
+
 import { Extension } from "resource:///org/gnome/shell/extensions/extension.js";
 import { UIManager } from "./lib/uiManager.js";
 import { RecordingController } from "./lib/recordingController.js";

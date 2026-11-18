@@ -9,19 +9,24 @@ const HELD_MODIFIERS =
   Clutter.ModifierType.SUPER_MASK |
   Clutter.ModifierType.SHIFT_MASK;
 
-function sleep(ms) {
-  return new Promise((resolve) =>
-    GLib.timeout_add(GLib.PRIORITY_DEFAULT, ms, () => {
-      resolve();
-      return GLib.SOURCE_REMOVE;
-    })
-  );
-}
-
 // Puts transcribed text where the user was typing.
 export class TextInserter {
   constructor() {
     this._keyboard = null;
+    this._timeouts = new Set();
+  }
+
+  // Resolves after `ms`. A wait that is still pending when the inserter is
+  // destroyed has its source removed and never resolves.
+  _sleep(ms) {
+    return new Promise((resolve) => {
+      const id = GLib.timeout_add(GLib.PRIORITY_DEFAULT, ms, () => {
+        this._timeouts.delete(id);
+        resolve();
+        return GLib.SOURCE_REMOVE;
+      });
+      this._timeouts.add(id);
+    });
   }
 
   /**
@@ -63,7 +68,7 @@ export class TextInserter {
     for (let i = 0; i < 30; i++) {
       const [, , modifiers] = global.get_pointer();
       if (!(modifiers & HELD_MODIFIERS)) return true;
-      await sleep(50);
+      await this._sleep(50);
     }
     return false;
   }
@@ -78,15 +83,17 @@ export class TextInserter {
       this._keyboard.notify_keyval(GLib.get_monotonic_time(), keyval, state);
 
     key(Clutter.KEY_Shift_L, Clutter.KeyState.PRESSED);
-    await sleep(20);
+    await this._sleep(20);
     key(Clutter.KEY_Insert, Clutter.KeyState.PRESSED);
-    await sleep(20);
+    await this._sleep(20);
     key(Clutter.KEY_Insert, Clutter.KeyState.RELEASED);
-    await sleep(20);
+    await this._sleep(20);
     key(Clutter.KEY_Shift_L, Clutter.KeyState.RELEASED);
   }
 
   destroy() {
+    for (const id of this._timeouts) GLib.Source.remove(id);
+    this._timeouts.clear();
     this._keyboard = null;
   }
 }

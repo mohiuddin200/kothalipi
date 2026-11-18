@@ -34,7 +34,7 @@ help:
 	@echo "  compile-schemas - Compile GSettings schemas only"
 	@echo "  install-service - Install the D-Bus service (supports PYTHON=... override)"
 	@echo "  verify-schema   - Verify schema is properly installed"
-	@echo "  package         - Create distribution package (development only)"
+	@echo "  package         - Build the zip for extensions.gnome.org"
 	@echo ""
 	@echo "Usage: make <target>"
 
@@ -162,38 +162,14 @@ clean:
 	@gsettings reset $(SCHEMA_ID) first-run 2>/dev/null || echo "ℹ️  Settings already at defaults"
 	@echo "🎯 Complete cleanup finished!"
 
-# Create distribution package for GNOME Extensions store
+# Build the zip that is uploaded to extensions.gnome.org
 package:
-	@echo "📦 Creating distribution package for GNOME Extensions store..."
-	@mkdir -p dist && \
-	PACKAGE_DIR="$(EXTENSION_UUID)" && \
-	PACKAGE_FILE="dist/$(EXTENSION_UUID).zip" && \
-	echo "   Creating package directory: $$PACKAGE_DIR" && \
-	rm -rf "$$PACKAGE_DIR" "$$PACKAGE_FILE" && \
-	mkdir -p "$$PACKAGE_DIR" && \
-	echo "   Copying extension files..." && \
-	cp -r $(SOURCE_DIR)/* "$$PACKAGE_DIR/" && \
-	echo "   Removing install-service.sh (now installed remotely from GitHub)..." && \
-	rm -f "$$PACKAGE_DIR/install-service.sh" && \
-	echo "   Validating schemas..." && \
-	glib-compile-schemas --strict "$$PACKAGE_DIR/schemas/" && \
-	echo "   Removing compiled schema (will be compiled on target system)..." && \
-	rm -f "$$PACKAGE_DIR/schemas/gschemas.compiled" && \
-	echo "   Service installer is now remote-only (downloaded from GitHub)..." && \
-	echo "   Creating ZIP package..." && \
-	cd "$$PACKAGE_DIR" && \
-	zip -r "../$$PACKAGE_FILE" . && \
-	cd .. && \
-	rm -rf "$$PACKAGE_DIR" && \
-	echo "✅ Package created: $$PACKAGE_FILE" && \
-	echo "   Size: $$(du -h "$$PACKAGE_FILE" | cut -f1)" && \
-	echo "   Contents:" && \
-	unzip -l "$$PACKAGE_FILE" | head -20 && \
-	echo "   ..." && \
-	echo "" && \
-	echo "🎯 Package ready for submission to GNOME Extensions store!"
-
-
+	@glib-compile-schemas --strict --dry-run $(SOURCE_DIR)/schemas
+	@mkdir -p dist
+	@rm -f "dist/$(EXTENSION_UUID).zip"
+	@cd $(SOURCE_DIR) && zip -qr "../dist/$(EXTENSION_UUID).zip" . -x "schemas/gschemas.compiled"
+	@echo "✅ dist/$(EXTENSION_UUID).zip"
+	@unzip -l "dist/$(EXTENSION_UUID).zip"
 
 # Clean only D-Bus service (for testing)
 clean-service:

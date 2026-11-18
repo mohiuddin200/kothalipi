@@ -2,7 +2,7 @@
 # Run the fork in a throwaway GNOME Shell that cannot touch the real session:
 # it gets its own D-Bus session and its own dconf database (kothalipi_dev).
 #
-#   dev/shell.sh check        headless: load the extension, report its state and JS errors
+#   dev/shell.sh check        headless: load the extension, disable and re-enable it, report its state and JS errors
 #   dev/shell.sh shots DIR    headless: play the pill through every state, save PNGs to DIR
 #   dev/shell.sh dev          windowed shell for trying the UI (needs: sudo apt install mutter-dev-bin)
 set -euo pipefail
@@ -69,6 +69,12 @@ check)
     dconf write /org/gnome/shell/enabled-extensions "['$UUID']"
     start_headless
     sleep 3
+    # Reviewers require a clean disable(): turn it off and on again before
+    # reporting, so anything left behind shows up as an error.
+    gnome-extensions disable "$UUID"
+    sleep 1
+    gnome-extensions enable "$UUID"
+    sleep 2
     report
     ;;
 shots)
