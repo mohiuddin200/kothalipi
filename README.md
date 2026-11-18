@@ -193,6 +193,7 @@ Right-click the top-bar icon for **Settings** and **Setup**.
 | --- | --- |
 | Dictation shortcut | Press it anywhere to start or stop dictating. |
 | Recording limit | Dictation stops on its own after this long. |
+| Language | The language you dictate in. Auto-detect can misread your first words. |
 | Show words while you speak | A rough preview above the pill. It is not the final text. |
 | Insert text at the cursor | When no field is focused, the text is copied instead. |
 | Copy to clipboard | Also keep each transcript on the clipboard. |

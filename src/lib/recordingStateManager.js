@@ -59,6 +59,9 @@ export class RecordingStateManager {
         return false;
       }
 
+      // Best effort: a service that cannot take it detects the language.
+      await this.dbusManager.setLanguage?.(settings.get_string("language"));
+
       // Older services have no live preview; the stand-in used by the
       // screenshot harness has no such method at all.
       this.livePreview =

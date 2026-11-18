@@ -194,12 +194,24 @@ export function settleSwitch(button) {
 
 /** @returns {{actor: St.BoxLayout, minus: St.Button, plus: St.Button, value: St.Label}} */
 export function createStepper(accessibleName) {
-  const actor = new St.BoxLayout({ style_class: "kothalipi-stepper" });
-  const minus = createIconButton(
-    "list-remove-symbolic",
-    `Decrease ${accessibleName}`
+  return createValueStepper(
+    ["list-remove-symbolic", `Decrease ${accessibleName}`],
+    ["list-add-symbolic", `Increase ${accessibleName}`]
   );
-  const plus = createIconButton("list-add-symbolic", `Increase ${accessibleName}`);
+}
+
+/** A stepper that walks a short list of choices instead of a number. */
+export function createChooser(accessibleName) {
+  return createValueStepper(
+    ["go-previous-symbolic", `Previous ${accessibleName}`],
+    ["go-next-symbolic", `Next ${accessibleName}`]
+  );
+}
+
+function createValueStepper(minusButton, plusButton) {
+  const actor = new St.BoxLayout({ style_class: "kothalipi-stepper" });
+  const minus = createIconButton(...minusButton);
+  const plus = createIconButton(...plusButton);
   const value = new St.Label({
     style_class: "kothalipi-stepper-value",
     y_align: Clutter.ActorAlign.CENTER,

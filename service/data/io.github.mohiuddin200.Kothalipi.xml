@@ -14,6 +14,11 @@
       <arg direction="out" type="b" name="success" />
     </method>
 
+    <method name="SetLanguage">
+      <arg direction="in" type="s" name="language" />
+      <arg direction="out" type="b" name="success" />
+    </method>
+
     <method name="StartRecording">
       <arg direction="in" type="i" name="duration" />
       <arg direction="in" type="b" name="copy_to_clipboard" />

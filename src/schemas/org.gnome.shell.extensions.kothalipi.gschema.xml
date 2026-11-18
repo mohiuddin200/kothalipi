@@ -32,6 +32,11 @@
             <summary>Show words while you speak</summary>
             <description>While dictating, show a rough transcript of the last few seconds above the pill. The text that gets delivered is still transcribed in full when dictation stops.</description>
         </key>
+        <key name="language" type="s">
+            <default>'auto'</default>
+            <summary>Spoken language</summary>
+            <description>The language you dictate in, as a Whisper language code such as 'en' or 'bn'. With 'auto' the language is detected for each recording, which can go wrong on the first words.</description>
+        </key>
         <key name="show-idle-pill" type="b">
             <default>true</default>
             <summary>Show the pill when idle</summary>

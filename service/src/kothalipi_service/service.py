@@ -70,6 +70,8 @@ class KothalipiService(ServiceInterface):
         # Off until an extension asks for it, so older extensions that would
         # not show the text do not pay for it.
         self.live_preview = False
+        # A Whisper language code such as "en", or None to detect it per recording.
+        self.language = None
         # The preview and the final transcription share one model.
         self._model_lock = threading.Lock()
         self.dependencies_checked = False
@@ -255,7 +257,7 @@ class KothalipiService(ServiceInterface):
             with self._model_lock:
                 model = self._load_whisper_model()
             use_fp16 = self.whisper_device == "gpu"
-            language = None
+            language = self.language
             last_text = ""
             seen_samples = 0
 
@@ -286,6 +288,8 @@ class KothalipiService(ServiceInterface):
                         verbose=None,
                     )
                 # Detecting the language costs a pass of its own; do it once.
+                # The first second is thin evidence, so the guess can be wrong
+                # for the whole recording; a set language avoids it.
                 language = language or result.get("language")
                 text = " ".join(
                     " ".join(
@@ -786,7 +790,9 @@ class KothalipiService(ServiceInterface):
             # A live preview pass may still be finishing on the same model.
             with self._model_lock:
                 model = self._load_whisper_model()
-                result = model.transcribe(audio_file, fp16=use_fp16)
+                result = model.transcribe(
+                    audio_file, fp16=use_fp16, language=self.language
+                )
             text = result["text"].strip()
 
             if not text:
@@ -867,6 +873,20 @@ class KothalipiService(ServiceInterface):
     def SetLivePreview(self, enabled: "b") -> "b":
         """Turn the rough transcript sent while recording on or off."""
         self.live_preview = bool(enabled)
+        return True
+
+    @method()
+    def SetLanguage(self, language: "s") -> "b":
+        """Set the spoken language as a Whisper code ("en"), or "auto" to detect it."""
+        code = (language or "").strip().lower()
+        if code in ("", "auto"):
+            self.language = None
+        elif code in whisper.tokenizer.LANGUAGES:
+            self.language = code
+        else:
+            syslog.syslog(syslog.LOG_ERR, f"Unsupported language: {language}")
+            return False
+        syslog.syslog(syslog.LOG_INFO, f"Language set: {self.language or 'auto'}")
         return True
 
     @method()

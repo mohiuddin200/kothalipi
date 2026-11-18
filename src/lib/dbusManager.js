@@ -15,6 +15,10 @@ const KothalipiInterface = `
       <arg direction="in" type="b" name="enabled" />
       <arg direction="out" type="b" name="success" />
     </method>
+    <method name="SetLanguage">
+      <arg direction="in" type="s" name="language" />
+      <arg direction="out" type="b" name="success" />
+    </method>
     <method name="StartRecording">
       <arg direction="in" type="i" name="duration" />
       <arg direction="in" type="b" name="copy_to_clipboard" />
@@ -329,6 +333,24 @@ export class DBusManager {
       return Boolean(enabled);
     } catch (e) {
       log.debug(`Live preview is not available: ${e?.message || e}`);
+      return false;
+    }
+  }
+
+  /** @returns {Promise<boolean>} false when the service did not take the language */
+  async setLanguage(language) {
+    const connectionReady = await this.ensureConnection();
+    if (!connectionReady || !this.dbusProxy) return false;
+
+    try {
+      const [success] = await this.dbusProxy.SetLanguageAsync(
+        String(language || "auto")
+      );
+      if (!success) log.warn(`Service rejected language "${language}"`);
+      return success;
+    } catch (e) {
+      // Older services always detect the language.
+      log.debug(`Language setting is not available: ${e?.message || e}`);
       return false;
     }
   }

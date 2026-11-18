@@ -4,6 +4,11 @@ Notable changes to Kothalipi. The format follows [Keep a Changelog](https://keep
 
 ## Unreleased
 
+### Added
+
+- A language setting. Choosing your language stops the live preview from guessing it from the first second of audio,
+  which could show the words in the wrong language for a whole recording.
+
 ## 1.0.0 - 2026-11-18
 
 Kothalipi starts as a fork of [Speech2Text](https://github.com/kavehtehrani/speech2text-extension) 1.4.3 by Kaveh

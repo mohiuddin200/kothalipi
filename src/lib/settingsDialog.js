@@ -6,6 +6,7 @@ import { isWaylandCompositor } from "./compat.js";
 import {
   createButton,
   createCard,
+  createChooser,
   createDialog,
   createKeycaps,
   createRow,
@@ -24,6 +25,27 @@ const DEFAULT_SHORTCUT = "<Super><Alt>r";
 const DURATION_MIN = 10;
 const DURATION_MAX = 300;
 const DURATION_STEP = 10;
+
+// Whisper language codes offered in the dialog. Any other code Whisper knows
+// can still be set through the "language" key.
+const LANGUAGES = [
+  ["auto", "Auto-detect"],
+  ["en", "English"],
+  ["bn", "Bangla"],
+  ["hi", "Hindi"],
+  ["ur", "Urdu"],
+  ["ar", "Arabic"],
+  ["de", "German"],
+  ["fr", "French"],
+  ["es", "Spanish"],
+  ["it", "Italian"],
+  ["pt", "Portuguese"],
+  ["ru", "Russian"],
+  ["tr", "Turkish"],
+  ["zh", "Chinese"],
+  ["ja", "Japanese"],
+  ["ko", "Korean"],
+];
 
 // 90 -> "1 min 30 sec"
 function formatDuration(seconds) {
@@ -93,7 +115,7 @@ export class SettingsDialog {
     // showModalDialog returns a timeout ID for widget centering
     this.centerTimeoutId = showModalDialog(this.overlay, this.dialog, {
       fallbackWidth: 480,
-      fallbackHeight: 520,
+      fallbackHeight: 580,
       onComplete: () => (this.centerTimeoutId = null),
     });
   }
@@ -128,7 +150,11 @@ export class SettingsDialog {
     this.closeButton = closeButton;
 
     dialog.add_child(
-      createCard([this._buildShortcutGroup(), this._buildDurationRow()])
+      createCard([
+        this._buildShortcutGroup(),
+        this._buildDurationRow(),
+        this._buildLanguageRow(),
+      ])
     );
     dialog.add_child(
       createCard(toggleSettings().map((setting) => this._buildToggleRow(setting)))
@@ -164,6 +190,15 @@ export class SettingsDialog {
       title: "Recording limit",
       description: "Dictation stops on its own after this long.",
       control: this.durationStepper.actor,
+    });
+  }
+
+  _buildLanguageRow() {
+    this.languageChooser = createChooser("language");
+    return createRow({
+      title: "Language",
+      description: "Auto-detect can misread your first words.",
+      control: this.languageChooser.actor,
     });
   }
 
@@ -212,6 +247,17 @@ export class SettingsDialog {
       stepDuration(DURATION_STEP)
     );
 
+    const stepLanguage = (delta) => {
+      const current = this.settings.get_string("language");
+      const index = LANGUAGES.findIndex(([code]) => code === current);
+      // A code from outside the list steps back onto it.
+      const next =
+        index < 0 ? 0 : (index + delta + LANGUAGES.length) % LANGUAGES.length;
+      this.settings.set_string("language", LANGUAGES[next][0]);
+    };
+    this.languageChooser.minus.connect("clicked", () => stepLanguage(-1));
+    this.languageChooser.plus.connect("clicked", () => stepLanguage(1));
+
     // The controls only write settings; what they show always comes from here.
     this._settingsChangedId = this.settings.connect("changed", () =>
       this._sync()
@@ -235,6 +281,11 @@ export class SettingsDialog {
     this.durationStepper.value.set_text(formatDuration(duration));
     this.durationStepper.minus.reactive = duration > DURATION_MIN;
     this.durationStepper.plus.reactive = duration < DURATION_MAX;
+
+    const language = this.settings.get_string("language");
+    this.languageChooser.value.set_text(
+      LANGUAGES.find(([code]) => code === language)?.[1] ?? language
+    );
 
     for (const [key, toggle] of this._switches)
       toggle.checked = this.settings.get_boolean(key);
