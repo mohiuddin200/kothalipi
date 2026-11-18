@@ -1,7 +1,7 @@
 {
   "uuid": "kothalipi@mohiuddin200.github.io",
   "name": "Kothalipi",
-  "description": "Kothalipi (কথালিপি, Bengali for \"speech-writing\") adds dictation to GNOME Shell using OpenAI’s Whisper speech recognition model. It records from your microphone, transcribes locally on your machine, and copies the text to your clipboard. It requires a companion D-Bus service, installed separately (see the instructions on GitHub).\n\nThis extension accesses the clipboard to copy transcribed text.\n\nKothalipi is a fork of Speech2Text by Kaveh Tehrani (https://github.com/kavehtehrani/speech2text-extension).",
+  "description": "Kothalipi adds dictation to GNOME Shell using OpenAI’s Whisper speech recognition model. It records from your microphone, transcribes locally on your machine, and copies the text to your clipboard. It requires a companion D-Bus service, installed separately (see the instructions on GitHub).\n\nThis extension accesses the clipboard to copy transcribed text.\n\nKothalipi is a fork of Speech2Text by Kaveh Tehrani (https://github.com/kavehtehrani/speech2text-extension).",
   "shell-version": ["46", "47", "48", "49", "50"],
   "url": "https://github.com/mohiuddin200/kothalipi/",
   "version-name": "1.0.0",
