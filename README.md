@@ -77,6 +77,38 @@ The service installer checks these and tells you what is missing.
 
 ## Installation
 
+### Quick setup with an AI agent
+
+If you use a coding agent such as Claude Code, copy this prompt into it and it will do the setup for you. To install
+by hand instead, follow the three steps below.
+
+```text
+Set up the Kothalipi dictation extension for GNOME Shell on this computer.
+Source and instructions: https://github.com/mohiuddin200/kothalipi (read the README first).
+
+1. Check that this is Linux running GNOME Shell 46 to 50 (gnome-shell --version) and note whether the
+   session is Wayland or X11 (echo $XDG_SESSION_TYPE). If it is not GNOME, stop and tell me.
+2. Check for git, make, ffmpeg, Python 3.8 to 3.13 with the venv module, and a clipboard tool
+   (wl-clipboard on Wayland; xclip and xdotool on X11). List anything missing and ask me before
+   running any sudo command to install it.
+3. Clone the repository to ~/.local/src/kothalipi (or update it with git pull if it is already there).
+   It must stay there, because the extension is linked from it.
+4. In the clone, run: make install
+5. Install the background service: ./service/install-service.sh --local --non-interactive --whisper-model base
+   This downloads the speech recognition libraries and takes several minutes. If nvidia-smi works on
+   this machine, ask me first whether I want GPU mode; if I say yes, add: --gpu --whisper-model small
+6. Check that the service answers:
+   gdbus call --session --dest io.github.mohiuddin200.Kothalipi --object-path /io/github/mohiuddin200/Kothalipi --method io.github.mohiuddin200.Kothalipi.GetServiceStatus
+   The reply should start with 'ready'.
+7. Run: gnome-extensions enable kothalipi@mohiuddin200.github.io
+   On Wayland this fails until I have logged out and back in. That is expected: do not log me out or
+   restart my session. Tell me to log out, log back in, and run that command myself.
+8. Finish with a short summary: what you installed, anything that failed, and how to use it
+   (press Super+Alt+R, speak, press it again; the first dictation is slower because the model downloads).
+
+Do not change any other system settings, and do not delete anything outside ~/.local/src/kothalipi.
+```
+
 ### 1. Install the extension
 
 ```bash

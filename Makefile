@@ -45,6 +45,7 @@ install:
 		echo "❌ $(EXTENSION_DIR) is a real directory; move it away first"; \
 		exit 1; \
 	fi
+	@mkdir -p "$(dir $(EXTENSION_DIR))"
 	@ln -sfn "$(CURDIR)/$(SOURCE_DIR)" "$(EXTENSION_DIR)"
 	@glib-compile-schemas --strict $(SOURCE_DIR)/schemas
 	@echo "✅ Linked $(EXTENSION_DIR) -> $(CURDIR)/$(SOURCE_DIR)"
