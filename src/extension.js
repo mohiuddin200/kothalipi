@@ -7,9 +7,13 @@
 import { Extension } from "resource:///org/gnome/shell/extensions/extension.js";
 import { UIManager } from "./lib/uiManager.js";
 import { RecordingController } from "./lib/recordingController.js";
+import { SpeechController } from "./lib/speechController.js";
 import { ServiceManager } from "./lib/serviceManager.js";
 import { KeybindingManager } from "./lib/keybindingManager.js";
 import { log } from "./lib/resourceUtils.js";
+
+const SAMPLE_TEXT =
+  "This is how I sound. Select some text in any app and I will read it to you.";
 
 export default class KothalipiExtension extends Extension {
   constructor(metadata) {
@@ -18,6 +22,7 @@ export default class KothalipiExtension extends Extension {
     this.settings = null;
     this.uiManager = null;
     this.recordingController = null;
+    this.speechController = null;
     this.serviceManager = null;
     this.keybindingManager = null;
   }
@@ -37,6 +42,11 @@ export default class KothalipiExtension extends Extension {
       this.serviceManager
     );
     this.recordingController.initialize();
+
+    this.speechController = new SpeechController(
+      this.uiManager,
+      this.serviceManager
+    );
 
     this.keybindingManager = new KeybindingManager(this);
     this.keybindingManager.setupKeybinding();
@@ -68,6 +78,15 @@ export default class KothalipiExtension extends Extension {
       onPartialTranscript: (recordingId, text) => {
         this.recordingController.handlePartialTranscript(recordingId, text);
       },
+      onSpeechLevel: (speechId, level) => {
+        this.speechController?.handleSpeechLevel(speechId, level);
+      },
+      onSpeechFinished: (speechId, reason) => {
+        this.speechController?.handleSpeechFinished(speechId, reason);
+      },
+      onSpeechError: (speechId, errorMessage) => {
+        this.speechController?.handleSpeechError(speechId, errorMessage);
+      },
     });
   }
 
@@ -95,10 +114,55 @@ export default class KothalipiExtension extends Extension {
         return;
       }
 
+      // The microphone would pick up the voice that is reading.
+      if (this.speechController?.active) await this.speechController.stop();
+
       await this.recordingController.toggleRecording(this.settings);
     } catch (error) {
       console.error("Error in toggleRecording:", error);
     }
+  }
+
+  // Reads the selected text aloud, or stops the reading in progress.
+  async readAloud() {
+    try {
+      if (!this.settings || !this.uiManager || !this.speechController) return;
+
+      if (this.speechController.active) {
+        await this.speechController.stop();
+        return;
+      }
+      await this._speak();
+    } catch (error) {
+      console.error("Error in readAloud:", error);
+    }
+  }
+
+  // Lets the settings dialog play the chosen voice at the chosen speed.
+  async playSample() {
+    try {
+      if (!this.settings || !this.uiManager || !this.speechController) return;
+
+      await this.speechController.stop();
+      await this._speak(SAMPLE_TEXT);
+    } catch (error) {
+      console.error("Error in playSample:", error);
+    }
+  }
+
+  async _speak(text = null) {
+    // A dictation owns the pill and the microphone until it is done.
+    if (this.recordingController?.busy) return;
+
+    const serviceStatus = await this.serviceManager.ensureServiceAvailable();
+    if (!serviceStatus.available) {
+      this.uiManager.showServiceSetupDialog(
+        serviceStatus.error || "The Kothalipi service is not available"
+      );
+      return;
+    }
+
+    await this.speechController.start(this.settings, text);
   }
 
   async _performAutoRecovery() {
@@ -128,6 +192,11 @@ export default class KothalipiExtension extends Extension {
           this.uiManager,
           this.serviceManager
         );
+        this.speechController?.cleanup();
+        this.speechController = new SpeechController(
+          this.uiManager,
+          this.serviceManager
+        );
       }
 
       if (this.settings && !this.keybindingManager) {
@@ -150,6 +219,11 @@ export default class KothalipiExtension extends Extension {
     if (this.keybindingManager) {
       this.keybindingManager.cleanup();
       this.keybindingManager = null;
+    }
+
+    if (this.speechController) {
+      this.speechController.cleanup();
+      this.speechController = null;
     }
 
     if (this.recordingController) {

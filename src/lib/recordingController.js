@@ -42,6 +42,11 @@ export class RecordingController {
     return this.uiManager.pill;
   }
 
+  /** A dictation is starting, recording or being transcribed. */
+  get busy() {
+    return this._phase !== "idle";
+  }
+
   initialize() {
     this.recordingStateManager = new RecordingStateManager(
       this.uiManager.icon,

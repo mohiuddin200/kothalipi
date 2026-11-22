@@ -42,5 +42,21 @@
             <summary>Show the pill when idle</summary>
             <description>Keep a small pill at the bottom of the screen while not dictating. Click it to start. When off, the pill only appears during dictation.</description>
         </key>
+        <key name="read-aloud" type="as">
+            <default>['&lt;Super&gt;&lt;Alt&gt;a']</default>
+            <summary>Read aloud</summary>
+            <description>Keyboard shortcut that reads the selected text aloud, or stops the reading</description>
+        </key>
+        <key name="read-aloud-voice" type="s">
+            <default>'af_heart'</default>
+            <summary>Reading voice</summary>
+            <description>The Kokoro voice that reads text aloud, such as 'af_heart' or 'bm_george'. The first letter is the language and accent: 'a' for American English, 'b' for British English.</description>
+        </key>
+        <key name="read-aloud-speed" type="d">
+            <default>1.0</default>
+            <range min="0.5" max="2.0"/>
+            <summary>Reading speed</summary>
+            <description>How fast text is read aloud, where 1.0 is the voice's normal pace</description>
+        </key>
     </schema>
 </schemalist>

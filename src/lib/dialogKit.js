@@ -119,6 +119,38 @@ export function createDialog({ title, size = "" }) {
   return { overlay, dialog, closeButton };
 }
 
+/**
+ * A row of tabs; exactly one is checked. `onChange` gets the new index.
+ * @returns {{actor: St.BoxLayout, select: function(number): void}}
+ */
+export function createTabs(labels, onChange) {
+  const actor = new St.BoxLayout({
+    style_class: "kothalipi-tabs",
+    x_align: Clutter.ActorAlign.START,
+  });
+  const buttons = labels.map(
+    (label) =>
+      new St.Button({
+        label,
+        style_class: "kothalipi-tab",
+        can_focus: true,
+        track_hover: true,
+      })
+  );
+  const select = (index) => {
+    buttons.forEach((button, i) => {
+      if (i === index) button.add_style_pseudo_class("checked");
+      else button.remove_style_pseudo_class("checked");
+    });
+    onChange(index);
+  };
+  buttons.forEach((button, i) => {
+    button.connect("clicked", () => select(i));
+    actor.add_child(button);
+  });
+  return { actor, select };
+}
+
 /** A rounded group; children are separated by hairlines. */
 export function createCard(children = []) {
   const card = new St.BoxLayout({ style_class: "kothalipi-card", vertical: true });

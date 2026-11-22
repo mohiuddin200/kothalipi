@@ -12,6 +12,8 @@ import {
   createRow,
   createStepper,
   createSwitch,
+  createTabs,
+  createWrappedLabel,
   setShortcutKeycaps,
   settleSwitch,
 } from "./dialogKit.js";
@@ -21,10 +23,26 @@ import {
   setupModalEventHandlers,
 } from "./resourceUtils.js";
 
-const DEFAULT_SHORTCUT = "<Super><Alt>r";
 const DURATION_MIN = 10;
 const DURATION_MAX = 300;
 const DURATION_STEP = 10;
+const SPEED_MIN = 0.5;
+const SPEED_MAX = 2.0;
+const SPEED_STEP = 0.1;
+
+// The two shortcuts, by settings key.
+const SHORTCUTS = {
+  "toggle-recording": {
+    title: "Dictation shortcut",
+    description: "Press it anywhere to start or stop dictating.",
+    fallback: "<Super><Alt>r",
+  },
+  "read-aloud": {
+    title: "Read aloud shortcut",
+    description: "Select text anywhere, then press it. Press again to stop.",
+    fallback: "<Super><Alt>a",
+  },
+};
 
 // Whisper language codes offered in the dialog. Any other code Whisper knows
 // can still be set through the "language" key.
@@ -45,6 +63,22 @@ const LANGUAGES = [
   ["zh", "Chinese"],
   ["ja", "Japanese"],
   ["ko", "Korean"],
+];
+
+// Kokoro voices offered in the dialog. Any other voice the model has can
+// still be set through the "read-aloud-voice" key.
+const VOICES = [
+  ["af_heart", "Heart · US"],
+  ["af_bella", "Bella · US"],
+  ["af_nicole", "Nicole · US"],
+  ["af_sarah", "Sarah · US"],
+  ["am_michael", "Michael · US"],
+  ["am_fenrir", "Fenrir · US"],
+  ["am_puck", "Puck · US"],
+  ["bf_emma", "Emma · UK"],
+  ["bf_isabella", "Isabella · UK"],
+  ["bm_george", "George · UK"],
+  ["bm_fable", "Fable · UK"],
 ];
 
 // 90 -> "1 min 30 sec"
@@ -99,6 +133,7 @@ export class SettingsDialog {
     this.clickHandler = null;
     this._settingsChangedId = 0;
     this._switches = new Map();
+    this._shortcuts = new Map();
   }
 
   show() {
@@ -115,7 +150,7 @@ export class SettingsDialog {
     // showModalDialog returns a timeout ID for widget centering
     this.centerTimeoutId = showModalDialog(this.overlay, this.dialog, {
       fallbackWidth: 480,
-      fallbackHeight: 580,
+      fallbackHeight: 620,
       onComplete: () => (this.centerTimeoutId = null),
     });
   }
@@ -141,6 +176,7 @@ export class SettingsDialog {
     this.keyPressHandler = null;
     this.clickHandler = null;
     this._switches.clear();
+    this._shortcuts.clear();
   }
 
   _build() {
@@ -149,34 +185,57 @@ export class SettingsDialog {
     this.dialog = dialog;
     this.closeButton = closeButton;
 
-    dialog.add_child(
+    const dictation = new St.BoxLayout({ style_class: "kothalipi-page", vertical: true });
+    dictation.add_child(
       createCard([
-        this._buildShortcutGroup(),
+        this._buildShortcutGroup("toggle-recording"),
         this._buildDurationRow(),
         this._buildLanguageRow(),
       ])
     );
-    dialog.add_child(
+    dictation.add_child(
       createCard(toggleSettings().map((setting) => this._buildToggleRow(setting)))
     );
+
+    const reading = new St.BoxLayout({ style_class: "kothalipi-page", vertical: true });
+    reading.add_child(
+      createCard([
+        this._buildShortcutGroup("read-aloud"),
+        this._buildVoiceGroup(),
+        this._buildSpeedRow(),
+      ])
+    );
+    reading.add_child(
+      createWrappedLabel(
+        "With nothing selected, the text you copied last is read. " +
+          "Reading runs on your computer and needs the read aloud part of the service.",
+        "kothalipi-note"
+      )
+    );
+
+    const pages = [dictation, reading];
+    this._tabs = createTabs(["Dictation", "Read aloud"], (index) =>
+      pages.forEach((page, i) => (page.visible = i === index))
+    );
+    dialog.add_child(this._tabs.actor);
+    for (const page of pages) dialog.add_child(page);
+    this._tabs.select(0);
   }
 
-  _buildShortcutGroup() {
-    this.shortcutKeycaps = createKeycaps();
-    const row = createRow({
-      title: "Dictation shortcut",
-      description: "Press it anywhere to start or stop dictating.",
-      control: this.shortcutKeycaps,
-    });
+  _buildShortcutGroup(key) {
+    const { title, description } = SHORTCUTS[key];
+    const keycaps = createKeycaps();
+    const row = createRow({ title, description, control: keycaps });
 
-    this.changeShortcutButton = createButton("Change");
-    this.resetToDefaultButton = createButton("Reset to default", "ghost");
-    this.removeShortcutButton = createButton("Remove", "ghost");
+    const change = createButton("Change");
+    const reset = createButton("Reset to default", "ghost");
+    const remove = createButton("Remove", "ghost");
+    this._shortcuts.set(key, { keycaps, change, reset, remove });
 
     const actions = new St.BoxLayout({ style_class: "kothalipi-row-actions" });
-    actions.add_child(this.changeShortcutButton);
-    actions.add_child(this.resetToDefaultButton);
-    actions.add_child(this.removeShortcutButton);
+    actions.add_child(change);
+    actions.add_child(reset);
+    actions.add_child(remove);
 
     const group = new St.BoxLayout({ vertical: true });
     group.add_child(row);
@@ -202,6 +261,33 @@ export class SettingsDialog {
     });
   }
 
+  _buildVoiceGroup() {
+    this.voiceChooser = createChooser("voice");
+    const row = createRow({
+      title: "Voice",
+      description: "The voices read English.",
+      control: this.voiceChooser.actor,
+    });
+
+    this.sampleButton = createButton("Play a sample");
+    const actions = new St.BoxLayout({ style_class: "kothalipi-row-actions" });
+    actions.add_child(this.sampleButton);
+
+    const group = new St.BoxLayout({ vertical: true });
+    group.add_child(row);
+    group.add_child(actions);
+    return group;
+  }
+
+  _buildSpeedRow() {
+    this.speedStepper = createStepper("reading speed");
+    return createRow({
+      title: "Speed",
+      description: "How fast the voice reads.",
+      control: this.speedStepper.actor,
+    });
+  }
+
   _buildToggleRow({ key, title, description }) {
     const toggle = createSwitch(title);
     toggle.connect("clicked", () =>
@@ -214,26 +300,28 @@ export class SettingsDialog {
   _connect() {
     this.closeButton.connect("clicked", () => this.close());
 
-    this.changeShortcutButton.connect("clicked", () => {
-      this.extension.uiManager.captureNewShortcut((newShortcut) => {
-        // Escape and the other keys go to whichever dialog is on top.
-        this.overlay?.grab_key_focus();
-        if (newShortcut) {
-          this.settings.set_strv("toggle-recording", [newShortcut]);
-          this.extension.keybindingManager?.setupKeybinding();
-        }
+    for (const [key, controls] of this._shortcuts) {
+      controls.change.connect("clicked", () => {
+        this.extension.uiManager.captureNewShortcut((newShortcut) => {
+          // Escape and the other keys go to whichever dialog is on top.
+          this.overlay?.grab_key_focus();
+          if (newShortcut) {
+            this.settings.set_strv(key, [newShortcut]);
+            this.extension.keybindingManager?.setupKeybinding();
+          }
+        });
       });
-    });
 
-    this.resetToDefaultButton.connect("clicked", () => {
-      this.settings.set_strv("toggle-recording", [DEFAULT_SHORTCUT]);
-      this.extension.keybindingManager?.setupKeybinding();
-    });
+      controls.reset.connect("clicked", () => {
+        this.settings.set_strv(key, [SHORTCUTS[key].fallback]);
+        this.extension.keybindingManager?.setupKeybinding();
+      });
 
-    this.removeShortcutButton.connect("clicked", () => {
-      Main.wm.removeKeybinding("toggle-recording");
-      this.settings.set_strv("toggle-recording", []);
-    });
+      controls.remove.connect("clicked", () => {
+        Main.wm.removeKeybinding(key);
+        this.settings.set_strv(key, []);
+      });
+    }
 
     const stepDuration = (delta) => {
       const current = this.settings.get_int("recording-duration");
@@ -247,16 +335,41 @@ export class SettingsDialog {
       stepDuration(DURATION_STEP)
     );
 
-    const stepLanguage = (delta) => {
-      const current = this.settings.get_string("language");
-      const index = LANGUAGES.findIndex(([code]) => code === current);
-      // A code from outside the list steps back onto it.
+    // Walks a list of [value, label] pairs kept in a string setting. A value
+    // from outside the list steps back onto it.
+    const stepChoice = (key, choices, delta) => {
+      const current = this.settings.get_string(key);
+      const index = choices.findIndex(([value]) => value === current);
       const next =
-        index < 0 ? 0 : (index + delta + LANGUAGES.length) % LANGUAGES.length;
-      this.settings.set_string("language", LANGUAGES[next][0]);
+        index < 0 ? 0 : (index + delta + choices.length) % choices.length;
+      this.settings.set_string(key, choices[next][0]);
     };
-    this.languageChooser.minus.connect("clicked", () => stepLanguage(-1));
-    this.languageChooser.plus.connect("clicked", () => stepLanguage(1));
+    this.languageChooser.minus.connect("clicked", () =>
+      stepChoice("language", LANGUAGES, -1)
+    );
+    this.languageChooser.plus.connect("clicked", () =>
+      stepChoice("language", LANGUAGES, 1)
+    );
+    this.voiceChooser.minus.connect("clicked", () =>
+      stepChoice("read-aloud-voice", VOICES, -1)
+    );
+    this.voiceChooser.plus.connect("clicked", () =>
+      stepChoice("read-aloud-voice", VOICES, 1)
+    );
+
+    const stepSpeed = (delta) => {
+      const current = this.settings.get_double("read-aloud-speed");
+      // Tenths, so repeated steps do not drift.
+      const next = Math.round((current + delta) * 10) / 10;
+      this.settings.set_double(
+        "read-aloud-speed",
+        Math.max(SPEED_MIN, Math.min(SPEED_MAX, next))
+      );
+    };
+    this.speedStepper.minus.connect("clicked", () => stepSpeed(-SPEED_STEP));
+    this.speedStepper.plus.connect("clicked", () => stepSpeed(SPEED_STEP));
+
+    this.sampleButton.connect("clicked", () => this.extension.playSample());
 
     // The controls only write settings; what they show always comes from here.
     this._settingsChangedId = this.settings.connect("changed", () =>
@@ -272,10 +385,12 @@ export class SettingsDialog {
   _sync() {
     if (!this.overlay) return;
 
-    const shortcut = this.settings.get_strv("toggle-recording")[0] ?? null;
-    setShortcutKeycaps(this.shortcutKeycaps, shortcut);
-    this.resetToDefaultButton.reactive = shortcut !== DEFAULT_SHORTCUT;
-    this.removeShortcutButton.reactive = shortcut !== null;
+    for (const [key, controls] of this._shortcuts) {
+      const shortcut = this.settings.get_strv(key)[0] ?? null;
+      setShortcutKeycaps(controls.keycaps, shortcut);
+      controls.reset.reactive = shortcut !== SHORTCUTS[key].fallback;
+      controls.remove.reactive = shortcut !== null;
+    }
 
     const duration = this.settings.get_int("recording-duration");
     this.durationStepper.value.set_text(formatDuration(duration));
@@ -286,6 +401,16 @@ export class SettingsDialog {
     this.languageChooser.value.set_text(
       LANGUAGES.find(([code]) => code === language)?.[1] ?? language
     );
+
+    const voice = this.settings.get_string("read-aloud-voice");
+    this.voiceChooser.value.set_text(
+      VOICES.find(([name]) => name === voice)?.[1] ?? voice
+    );
+
+    const speed = this.settings.get_double("read-aloud-speed");
+    this.speedStepper.value.set_text(`${speed.toFixed(1)}×`);
+    this.speedStepper.minus.reactive = speed > SPEED_MIN + 0.01;
+    this.speedStepper.plus.reactive = speed < SPEED_MAX - 0.01;
 
     for (const [key, toggle] of this._switches)
       toggle.checked = this.settings.get_boolean(key);

@@ -7,6 +7,7 @@ This is the entry point that gets called when users run 'kothalipi-service'.
 
 import sys
 import argparse
+from . import __version__
 from .service import main as service_main
 
 
@@ -22,7 +23,7 @@ def main():
     parser.add_argument(
         "--version",
         action="version",
-        version="%(prog)s 1.2.0"
+        version=f"%(prog)s {__version__}"
     )
     
     parser.add_argument(

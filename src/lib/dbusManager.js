@@ -45,6 +45,29 @@ const KothalipiInterface = `
       <arg direction="out" type="b" name="all_available" />
       <arg direction="out" type="as" name="missing_dependencies" />
     </method>
+    <method name="Speak">
+      <arg direction="in" type="s" name="text" />
+      <arg direction="in" type="s" name="voice" />
+      <arg direction="in" type="d" name="speed" />
+      <arg direction="out" type="s" name="speech_id" />
+    </method>
+    <method name="StopSpeaking">
+      <arg direction="in" type="s" name="speech_id" />
+      <arg direction="out" type="b" name="success" />
+    </method>
+    <method name="PauseSpeaking">
+      <arg direction="in" type="s" name="speech_id" />
+      <arg direction="out" type="b" name="success" />
+    </method>
+    <method name="ResumeSpeaking">
+      <arg direction="in" type="s" name="speech_id" />
+      <arg direction="out" type="b" name="success" />
+    </method>
+    <method name="SetSpeechSpeed">
+      <arg direction="in" type="s" name="speech_id" />
+      <arg direction="in" type="d" name="speed" />
+      <arg direction="out" type="b" name="success" />
+    </method>
     <signal name="RecordingStarted">
       <arg type="s" name="recording_id" />
     </signal>
@@ -71,6 +94,21 @@ const KothalipiInterface = `
     <signal name="PartialTranscript">
       <arg type="s" name="recording_id" />
       <arg type="s" name="text" />
+    </signal>
+    <signal name="SpeechStarted">
+      <arg type="s" name="speech_id" />
+    </signal>
+    <signal name="SpeechFinished">
+      <arg type="s" name="speech_id" />
+      <arg type="s" name="reason" />
+    </signal>
+    <signal name="SpeechError">
+      <arg type="s" name="speech_id" />
+      <arg type="s" name="error_message" />
+    </signal>
+    <signal name="SpeechLevel">
+      <arg type="s" name="speech_id" />
+      <arg type="d" name="level" />
     </signal>
   </interface>
 </node>`;
@@ -202,6 +240,44 @@ export class DBusManager {
         "PartialTranscript",
         (proxy, sender, [recordingId, text]) => {
           handlers.onPartialTranscript?.(recordingId, text);
+        }
+      )
+    );
+
+    // Read aloud. Services before 1.4.0 never send these.
+    this.signalConnections.push(
+      this.dbusProxy.connectSignal(
+        "SpeechStarted",
+        (proxy, sender, [speechId]) => {
+          handlers.onSpeechStarted?.(speechId);
+        }
+      )
+    );
+
+    this.signalConnections.push(
+      this.dbusProxy.connectSignal(
+        "SpeechFinished",
+        (proxy, sender, [speechId, reason]) => {
+          handlers.onSpeechFinished?.(speechId, reason);
+        }
+      )
+    );
+
+    this.signalConnections.push(
+      this.dbusProxy.connectSignal(
+        "SpeechError",
+        (proxy, sender, [speechId, errorMessage]) => {
+          log.warn(`Read aloud error: ${errorMessage}`);
+          handlers.onSpeechError?.(speechId, errorMessage);
+        }
+      )
+    );
+
+    this.signalConnections.push(
+      this.dbusProxy.connectSignal(
+        "SpeechLevel",
+        (proxy, sender, [speechId, level]) => {
+          handlers.onSpeechLevel?.(speechId, level);
         }
       )
     );
@@ -415,6 +491,65 @@ export class DBusManager {
       return success;
     } catch (e) {
       throw new Error(`Failed to type text: ${e.message}`);
+    }
+  }
+
+  /** @returns {Promise<string>} the id the service gave this speech */
+  async speak(text, voice, speed) {
+    const connectionReady = await this.ensureConnection();
+    if (!connectionReady || !this.dbusProxy) {
+      throw new Error("D-Bus connection not available");
+    }
+
+    const [speechId] = await this.dbusProxy.SpeakAsync(
+      String(text),
+      String(voice || ""),
+      Number(speed) || 1
+    );
+    return speechId;
+  }
+
+  /** Stops the speech with this id, or whatever is being read when it is empty. */
+  async stopSpeaking(speechId = "") {
+    if (!this.dbusProxy) return false;
+
+    try {
+      const [success] = await this.dbusProxy.StopSpeakingAsync(speechId);
+      return success;
+    } catch (e) {
+      log.debug(`Could not stop the speech: ${e?.message || e}`);
+      return false;
+    }
+  }
+
+  /** Holds a speech where it is, or carries on with it. False when the service could not. */
+  async setSpeechPaused(speechId, paused) {
+    if (!this.dbusProxy) return false;
+
+    try {
+      const [success] = paused
+        ? await this.dbusProxy.PauseSpeakingAsync(speechId)
+        : await this.dbusProxy.ResumeSpeakingAsync(speechId);
+      return success;
+    } catch (e) {
+      log.debug(`Could not pause or resume the speech: ${e?.message || e}`);
+      return false;
+    }
+  }
+
+  /** Carries on with a speech at another speed. False when the service could not. */
+  async setSpeechSpeed(speechId, speed) {
+    if (!this.dbusProxy) return false;
+
+    try {
+      const [success] = await this.dbusProxy.SetSpeechSpeedAsync(
+        speechId,
+        Number(speed) || 1
+      );
+      return success;
+    } catch (e) {
+      log.debug(`Could not change the reading speed: ${e?.message || e}`);
+      return false;
     }
   }
 

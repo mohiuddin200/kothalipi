@@ -66,6 +66,10 @@ export class UIManager {
       onStart: () => core.toggleRecording(),
       onStop: () => core.recordingController?.stop(),
       onCancel: () => core.recordingController?.cancel(),
+      onStopSpeaking: () => core.speechController?.stop(),
+      onPauseToggle: () => core.speechController?.togglePause(),
+      onSlower: () => core.speechController?.changeSpeed(settings, -1),
+      onFaster: () => core.speechController?.changeSpeed(settings, 1),
       onSecondary: () => this.showSettingsWindow(),
     });
 
@@ -85,6 +89,13 @@ export class UIManager {
   }
 
   createPopupMenu() {
+    const readItem = new PopupMenu.PopupMenuItem("Read selected text aloud");
+    readItem.connect("activate", () => {
+      this.extensionCore.readAloud();
+    });
+    this.icon.menu.addMenuItem(readItem);
+    this.icon.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
+
     // Settings menu item
     let settingsItem = new PopupMenu.PopupMenuItem("Settings");
     settingsItem.connect("activate", () => {

@@ -51,6 +51,35 @@
       <arg direction="out" type="as" name="missing_dependencies" />
     </method>
 
+    <!-- Read aloud. An empty speech_id stops whatever is being read. -->
+    <method name="Speak">
+      <arg direction="in" type="s" name="text" />
+      <arg direction="in" type="s" name="voice" />
+      <arg direction="in" type="d" name="speed" />
+      <arg direction="out" type="s" name="speech_id" />
+    </method>
+
+    <method name="StopSpeaking">
+      <arg direction="in" type="s" name="speech_id" />
+      <arg direction="out" type="b" name="success" />
+    </method>
+
+    <method name="PauseSpeaking">
+      <arg direction="in" type="s" name="speech_id" />
+      <arg direction="out" type="b" name="success" />
+    </method>
+
+    <method name="ResumeSpeaking">
+      <arg direction="in" type="s" name="speech_id" />
+      <arg direction="out" type="b" name="success" />
+    </method>
+
+    <method name="SetSpeechSpeed">
+      <arg direction="in" type="s" name="speech_id" />
+      <arg direction="in" type="d" name="speed" />
+      <arg direction="out" type="b" name="success" />
+    </method>
+
     <!-- Signals -->
     <signal name="RecordingStarted">
       <arg type="s" name="recording_id" />
@@ -82,6 +111,21 @@
     <signal name="PartialTranscript">
       <arg type="s" name="recording_id" />
       <arg type="s" name="text" />
+    </signal>
+    <signal name="SpeechStarted">
+      <arg type="s" name="speech_id" />
+    </signal>
+    <signal name="SpeechFinished">
+      <arg type="s" name="speech_id" />
+      <arg type="s" name="reason" />
+    </signal>
+    <signal name="SpeechError">
+      <arg type="s" name="speech_id" />
+      <arg type="s" name="error_message" />
+    </signal>
+    <signal name="SpeechLevel">
+      <arg type="s" name="speech_id" />
+      <arg type="d" name="level" />
     </signal>
   </interface>
 </node> 
