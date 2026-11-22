@@ -1,9 +1,9 @@
 """Kothalipi Service
 
-A D-Bus service that provides speech-to-text functionality for the GNOME Shell extension.
+A D-Bus service that provides speech-to-text and read aloud for the GNOME Shell extension.
 """
 
-__version__ = "1.3.0"
+__version__ = "1.4.0"
 __author__ = "Kaveh Tehrani"
 __email__ = "codemonkey13x@gmail.com"
 

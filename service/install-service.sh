@@ -11,6 +11,7 @@ PYTHON_OVERRIDE=""
 GPU_MODE=false
 WHISPER_MODEL=""
 SERVICE_VERSION=""
+READ_ALOUD=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -40,6 +41,10 @@ while [[ $# -gt 0 ]]; do
             GPU_MODE=true
             shift
             ;;
+        --read-aloud)
+            READ_ALOUD=true
+            shift
+            ;;
         --whisper-model)
             if [[ -z "${2:-}" ]]; then
                 echo "Error: --whisper-model requires a value (e.g. --whisper-model base)"
@@ -67,6 +72,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --pypi            Force installation from PyPI"
             echo "  --gpu             Install GPU-enabled ML dependencies (CUDA/accelerator support)"
             echo "  --whisper-model <name>  Record selected Whisper model (for UI display; does not affect deps)"
+            echo "  --read-aloud      Also install read aloud: the Kokoro voice and its model files (about 400 MB)"
             echo "  --service-version <version>  Specify exact service package version to install from PyPI (e.g. 1.2.0)"
             echo "  --non-interactive Run without user prompts (auto-accept defaults)"
             echo "  --help            Show this help message"
@@ -540,6 +546,66 @@ install_service_package() {
 
 install_service_package
 
+# Read aloud is optional: the Kokoro text-to-speech package and its model files.
+# The model files live outside the venv, so a reinstall does not fetch them again.
+KOKORO_FILES_URL="https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.1"
+READ_ALOUD_INSTALLED=false
+
+install_read_aloud() {
+    if ! version_ge "$PYTHON_VERSION" "3.10"; then
+        print_warning "Read aloud needs Python 3.10 or newer (found $PYTHON_VERSION). Skipping it."
+        print_warning "Re-run with a newer interpreter to add it, for example: $0 --python python3.12 --read-aloud"
+        return
+    fi
+
+    print_status "Installing read aloud (Kokoro text to speech)..."
+    "$VENV_DIR/bin/python" -m pip install \
+        --index-url "https://pypi.org/simple" \
+        --upgrade-strategy only-if-needed \
+        "kokoro-onnx>=0.6.1" \
+        || error_exit "Failed to install kokoro-onnx"
+
+    local tts_dir="$SERVICE_DIR/tts"
+    mkdir -p "$tts_dir"
+    local name
+    for name in kokoro-v1.0.onnx voices-v1.0.bin; do
+        if [ -s "$tts_dir/$name" ]; then
+            print_status "Voice file already present: $name"
+            continue
+        fi
+        print_status "Downloading voice file: $name"
+        "$VENV_DIR/bin/python" - "$KOKORO_FILES_URL/$name" "$tts_dir/$name" << 'PYEOF' || error_exit "Failed to download $name"
+import os
+import sys
+import urllib.request
+
+url, target = sys.argv[1], sys.argv[2]
+partial = target + ".part"
+
+
+def progress(blocks, block_size, total):
+    if total > 0 and blocks % 400 == 0:
+        done = min(100, blocks * block_size * 100 // total)
+        print(f"\r    {done}% of {total // (1024 * 1024)} MB", end="", flush=True)
+
+
+urllib.request.urlretrieve(url, partial, progress)
+print()
+os.replace(partial, target)
+PYEOF
+    done
+
+    if ! command_exists paplay && ! command_exists pw-play; then
+        print_warning "No audio player found. Read aloud plays through paplay (pulseaudio-utils) or pw-play (pipewire)."
+    fi
+
+    READ_ALOUD_INSTALLED=true
+}
+
+if [ "$READ_ALOUD" = true ]; then
+    install_read_aloud
+fi
+
 print_status "Creating service wrapper script..."
 # Create a wrapper script that activates the venv and runs the service
 cat > "$SERVICE_DIR/kothalipi-service" << 'EOF'
@@ -636,6 +702,7 @@ INSTALLED_AT="$(date -u +'%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || echo "unknown")"
     echo "model=$WHISPER_MODEL"
     echo "installed_at=$INSTALLED_AT"
     echo "installer_mode=$INSTALL_MODE"
+    echo "read_aloud=$READ_ALOUD_INSTALLED"
 } > "$INSTALL_STATE_FILE" 2>/dev/null || true
 
 echo -e "${YELLOW}The D-Bus service has been installed and registered.${NC}"

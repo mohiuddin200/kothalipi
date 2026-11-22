@@ -20,6 +20,8 @@ import whisper
 from dbus_next.aio import MessageBus
 from dbus_next.service import ServiceInterface, method, signal as dbus_signal
 
+from .tts import Speaker
+
 BUS_NAME = "io.github.mohiuddin200.Kothalipi"
 OBJECT_PATH = "/io/github/mohiuddin200/Kothalipi"
 INTERFACE_NAME = "io.github.mohiuddin200.Kothalipi"
@@ -49,9 +51,11 @@ if TYPE_CHECKING:
     # Static type checkers may flag these as undefined forward references; define them for typing only.
     class i: ...
     class b: ...
+    class d: ...
     class s: ...
     class ss: ...
     class sb: ...
+    class sd: ...
     class bas: ...
 
 
@@ -76,6 +80,20 @@ class KothalipiService(ServiceInterface):
         self._model_lock = threading.Lock()
         self.dependencies_checked = False
         self.missing_deps = []
+
+        # Read aloud. The speaker calls back from its own threads.
+        self._speaker = Speaker(
+            on_started=lambda speech_id: self._emit_threadsafe(self.SpeechStarted, speech_id),
+            on_finished=lambda speech_id, reason: self._emit_threadsafe(
+                self.SpeechFinished, speech_id, reason
+            ),
+            on_error=lambda speech_id, message: self._emit_threadsafe(
+                self.SpeechError, speech_id, message
+            ),
+            on_level=lambda speech_id, level: self._emit_threadsafe(
+                self.SpeechLevel, speech_id, level
+            ),
+        )
 
         # Initialize syslog for proper journalctl logging
         syslog.openlog("kothalipi-service", syslog.LOG_PID, syslog.LOG_USER)
@@ -897,6 +915,9 @@ class KothalipiService(ServiceInterface):
             if not deps_ok:
                 raise Exception(f"Missing dependencies: {', '.join(missing)}")
 
+            # The microphone would pick up the voice that is reading.
+            self._speaker.stop()
+
             recording_id = str(uuid.uuid4())
             duration = min(max(1, int(duration)), 300)  # 1s to 5min
 
@@ -1021,6 +1042,31 @@ class KothalipiService(ServiceInterface):
         except Exception as e:
             return [False, [f"Error checking dependencies: {str(e)}"]]
 
+    @method()
+    def Speak(self, text: "s", voice: "s", speed: "d") -> "s":
+        """Read text aloud. Replaces any speech in progress; progress arrives as signals."""
+        return self._speaker.speak(text, voice, speed)
+
+    @method()
+    def StopSpeaking(self, speech_id: "s") -> "b":
+        """Stop reading aloud. An empty id stops whatever is being read."""
+        return self._speaker.stop(speech_id)
+
+    @method()
+    def PauseSpeaking(self, speech_id: "s") -> "b":
+        """Hold the reading where it is. An empty id pauses whatever is being read."""
+        return self._speaker.pause(speech_id)
+
+    @method()
+    def ResumeSpeaking(self, speech_id: "s") -> "b":
+        """Carry on with a paused reading."""
+        return self._speaker.resume(speech_id)
+
+    @method()
+    def SetSpeechSpeed(self, speech_id: "s", speed: "d") -> "b":
+        """Carry on reading at another speed, from the clause being spoken."""
+        return self._speaker.set_speed(speech_id, speed)
+
     # D-Bus Signals
     @dbus_signal()
     def RecordingStarted(self, recording_id: "s") -> "s":
@@ -1050,8 +1096,25 @@ class KothalipiService(ServiceInterface):
     def PartialTranscript(self, recording_id: "s", text: "s") -> "ss":
         return [recording_id, text]
 
+    @dbus_signal()
+    def SpeechStarted(self, speech_id: "s") -> "s":
+        return speech_id
+
+    @dbus_signal()
+    def SpeechFinished(self, speech_id: "s", reason: "s") -> "ss":
+        return [speech_id, reason]
+
+    @dbus_signal()
+    def SpeechError(self, speech_id: "s", error_message: "s") -> "ss":
+        return [speech_id, error_message]
+
+    @dbus_signal()
+    def SpeechLevel(self, speech_id: "s", level: "d") -> "sd":
+        return [speech_id, level]
+
     def shutdown(self):
         """Attempt graceful shutdown of active recordings."""
+        self._speaker.shutdown()
         for recording_id, recording_info in list(self.active_recordings.items()):
             process = recording_info.get("process")
             if process and process.poll() is None:

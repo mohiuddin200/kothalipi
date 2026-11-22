@@ -26,6 +26,8 @@ const BAR_PITCH = 6;
 const BAR_MAX = 22;
 const BUTTON_RADIUS = 13;
 const BUTTON_INSET = 20; // button centre from the pill's end
+const BUTTON_PITCH = 30; // between two buttons that sit side by side
+const SPEAKING_BARS_SHIFT = -1; // the bars sit between two pairs of buttons
 
 const INK = [0.063, 0.063, 0.071];
 const STOP_RED = [0.898, 0.282, 0.302];
@@ -37,6 +39,7 @@ const SPEC = {
   rest: { w: 40, h: 10, fill: 0.72, border: 0.22, elev: 0.3 },
   hover: { w: 104, h: 30, fill: 0.94, border: 0.16, elev: 0.8 },
   recording: { w: 176, h: 40, fill: 0.96, border: 0.14, elev: 1 },
+  speaking: { w: 226, h: 40, fill: 0.96, border: 0.14, elev: 1 },
   processing: { w: 112, h: 34, fill: 0.96, border: 0.14, elev: 0.9 },
   done: { w: 52, h: 34, fill: 0.96, border: 0.14, elev: 0.9 },
   error: { w: 52, h: 34, fill: 0.96, border: 0.14, elev: 0.9 },
@@ -118,6 +121,10 @@ export class FlowPill {
    * @param {Function} actions.onStart - click on the idle pill
    * @param {Function} actions.onStop - stop button, or click on the body while recording
    * @param {Function} actions.onCancel - cancel button
+   * @param {Function} actions.onStopSpeaking - stop button while reading aloud
+   * @param {Function} actions.onPauseToggle - pause or play button, or click on the body while reading aloud
+   * @param {Function} actions.onSlower - slower button while reading aloud
+   * @param {Function} actions.onFaster - faster button while reading aloud
    * @param {Function} actions.onSecondary - right click on the idle pill
    */
   constructor(actions) {
@@ -128,6 +135,7 @@ export class FlowPill {
     this._idleVisible = true;
     this._suppressed = false; // overview or fullscreen
     this._hovered = false;
+    this._paused = false; // reading aloud is on hold
     this._zone = null;
     this._pressedZone = null;
     this._shortcutLabel = "";
@@ -152,10 +160,16 @@ export class FlowPill {
       elev: new Spring(0),
       lift: new Spring(BASE_LIFT),
       bars: new Spring(0),
+      barsShift: new Spring(0),
       cancel: new Spring(0),
       stop: new Spring(0),
+      controls: new Spring(0),
+      paused: new Spring(0),
       cancelHover: new Spring(0),
       stopHover: new Spring(0),
+      pauseHover: new Spring(0),
+      slowerHover: new Spring(0),
+      fasterHover: new Spring(0),
       press: new Spring(0),
       check: new Spring(0),
       glyph: new Spring(0),
@@ -186,16 +200,18 @@ export class FlowPill {
     return this._state;
   }
 
-  /** @param {"idle"|"recording"|"processing"|"done"|"error"} state */
+  /** @param {"idle"|"recording"|"speaking"|"processing"|"done"|"error"} state */
   setState(state, { label = null, holdMs = 0 } = {}) {
     if (!SPEC[state] && state !== "idle") return;
     const previous = this._state;
     this._state = state;
     this._stateAge = 0;
     this._pressedZone = null;
+    this._paused = false;
+    this._springs.paused.to(0, STIFF_FEEDBACK);
     this._clearTimeout("_settleTimeoutId");
 
-    if (state === "recording" && previous !== "recording") {
+    if ((state === "recording" || state === "speaking") && previous !== state) {
       this._level = 0;
       this._levelTarget = 0;
       this._lastLevelAt = -1;
@@ -223,22 +239,31 @@ export class FlowPill {
     this._wake();
   }
 
-  /** Voice level from the service, 0..1. */
+  /** Level of the voice being recorded or read aloud, from the service, 0..1. */
   pushLevel(level) {
     this._levelTarget = clamp01(level);
     this._lastLevelAt = this._clock;
   }
 
   /**
-   * A short line shown above the pill while recording, or null to clear it.
-   * `keepEnd` cuts a line that is too long at its start, for text that grows.
+   * A short line shown above the pill while recording or reading aloud, or
+   * null to clear it. `keepEnd` cuts a line that is too long at its start,
+   * for text that grows. With `holdMs` the line goes away by itself.
    */
-  setHint(markup, { keepEnd = false } = {}) {
-    if (this._state !== "recording") return;
+  setHint(markup, { keepEnd = false, holdMs = 0 } = {}) {
+    if (this._state !== "recording" && this._state !== "speaking") return;
     this._label.clutter_text.ellipsize = keepEnd
       ? Pango.EllipsizeMode.START
       : Pango.EllipsizeMode.END;
-    this._showLabel(markup);
+    this._showLabel(markup, holdMs);
+  }
+
+  /** While reading aloud: show the reading as on hold, with a play button. */
+  setPaused(paused) {
+    if (this._state !== "speaking") return;
+    this._paused = paused;
+    this._springs.paused.to(paused ? 1 : 0, STIFF_FEEDBACK);
+    this._wake();
   }
 
   setShortcutLabel(text) {
@@ -473,13 +498,17 @@ export class FlowPill {
     sp.elev.to(spec.elev, stiffness);
 
     const barsOn =
-      visual === "hover" || visual === "recording" || visual === "processing";
+      visual === "hover" ||
+      visual === "recording" ||
+      visual === "speaking" ||
+      visual === "processing";
     sp.bars.to(barsOn ? 1 : 0, barsOn ? STIFF_ENTER : STIFF_EXIT);
+    sp.barsShift.to(visual === "speaking" ? SPEAKING_BARS_SHIFT : 0, stiffness);
 
-    if (visual !== "recording") {
-      sp.cancel.to(0, STIFF_EXIT);
+    if (visual !== "recording") sp.cancel.to(0, STIFF_EXIT);
+    if (visual !== "speaking") sp.controls.to(0, STIFF_EXIT);
+    if (visual !== "recording" && visual !== "speaking")
       sp.stop.to(0, STIFF_EXIT);
-    }
     sp.check.to(visual === "done" ? 1 : 0, visual === "done" ? 300 : STIFF_EXIT);
     sp.glyph.to(visual === "error" ? 1 : 0, STIFF_ENTER);
 
@@ -491,12 +520,14 @@ export class FlowPill {
   // Targets that depend on how long the state has been showing: the buttons
   // arrive one after the other once the pill has started to open.
   _applyTimedTargets() {
-    if (this._state !== "recording") return;
+    const recording = this._state === "recording";
+    if (!recording && this._state !== "speaking") return;
     const sp = this._springs;
-    if (this._stateAge > 0.07) sp.cancel.to(1, STIFF_ENTER);
+    if (this._stateAge > 0.07) (recording ? sp.cancel : sp.controls).to(1, STIFF_ENTER);
     if (this._stateAge > 0.12) sp.stop.to(1, STIFF_ENTER);
     if (!this._animationsEnabled()) {
       sp.cancel.snap();
+      sp.controls.snap();
       sp.stop.snap();
     }
   }
@@ -516,7 +547,12 @@ export class FlowPill {
   }
 
   _needsFrames() {
-    if (this._state === "recording" || this._state === "processing") return true;
+    if (
+      this._state === "recording" ||
+      (this._state === "speaking" && !this._paused) ||
+      this._state === "processing"
+    )
+      return true;
     if (this._barsMoving) return true;
     return !Object.values(this._springs).every((spring) => spring.settled);
   }
@@ -539,15 +575,19 @@ export class FlowPill {
 
   _stepBars(dt) {
     const recording = this._state === "recording";
-    const processing = this._state === "processing";
+    const speaking = this._state === "speaking" && !this._paused;
+    // Reading aloud is quiet until the service has made the first words.
+    const waiting = speaking && this._lastLevelAt < 0;
+    const voiced = recording || (speaking && !waiting);
+    const processing = this._state === "processing" || waiting;
 
     // Fast attack, slower release: bars jump with the voice and fall softly.
-    let target = recording ? this._levelTarget : 0;
+    let target = voiced ? this._levelTarget : 0;
     if (recording && this._lastLevelAt < 0 && this._stateAge > 0.7) {
       // The service sends no levels (older version): breathe instead of
       // pretending to follow the voice.
       target = 0.2 + 0.1 * Math.sin(this._clock * 3.6);
-    } else if (recording && this._clock - this._lastLevelAt > 0.4) {
+    } else if (voiced && this._clock - this._lastLevelAt > 0.4) {
       target = 0;
     }
     const tau = target > this._level ? 0.03 : 0.16;
@@ -565,7 +605,7 @@ export class FlowPill {
       let height = BAR_WIDTH;
       let alpha = 0.72;
 
-      if (recording) {
+      if (voiced) {
         // The centre shows the newest level; it ripples outwards.
         const distance = Math.abs(i - centre);
         const delayFrames = Math.round(distance * 1.7);
@@ -584,6 +624,8 @@ export class FlowPill {
       } else if (processing) {
         // Reduced motion: the row breathes in place instead of travelling.
         alpha = 0.55 + 0.3 * Math.sin(this._clock * 3);
+      } else if (this._paused) {
+        alpha = 0.45;
       }
 
       const k = 1 - Math.exp(-dt / 0.045);
@@ -636,6 +678,17 @@ export class FlowPill {
 
   _showLabel(markup, autoHideMs = 0) {
     this._clearTimeout("_labelTimeoutId");
+    if (markup && autoHideMs > 0) {
+      this._labelTimeoutId = GLib.timeout_add(
+        GLib.PRIORITY_DEFAULT,
+        autoHideMs,
+        () => {
+          this._labelTimeoutId = 0;
+          this._showLabel(null);
+          return GLib.SOURCE_REMOVE;
+        }
+      );
+    }
     if (markup === this._labelMarkup) return;
     const swap = markup && this._labelMarkup && this._label.opacity === 255;
     this._labelMarkup = markup;
@@ -669,18 +722,6 @@ export class FlowPill {
       });
     } else {
       fadeIn();
-    }
-
-    if (markup && autoHideMs > 0) {
-      this._labelTimeoutId = GLib.timeout_add(
-        GLib.PRIORITY_DEFAULT,
-        autoHideMs,
-        () => {
-          this._labelTimeoutId = 0;
-          this._showLabel(null);
-          return GLib.SOURCE_REMOVE;
-        }
-      );
     }
   }
 
@@ -735,12 +776,27 @@ export class FlowPill {
     const y = localY / this._scale;
     const body = this._bodyRect();
 
-    if (this._state === "recording") {
+    const recording = this._state === "recording";
+    if (recording || this._state === "speaking") {
       const reach = BUTTON_RADIUS + 3;
       const cancelX = body.x + BUTTON_INSET;
       const stopX = body.x + body.w - BUTTON_INSET;
-      if (Math.hypot(x - cancelX, y - body.cy) <= reach) return "cancel";
-      if (Math.hypot(x - stopX, y - body.cy) <= reach) return "stop";
+      if (recording && Math.hypot(x - cancelX, y - body.cy) <= reach)
+        return "cancel";
+      if (recording) {
+        if (Math.hypot(x - stopX, y - body.cy) <= reach) return "stop";
+      } else {
+        // The buttons of a pair touch, so the nearer one takes the pointer.
+        const near = (first, second, firstX) => {
+          const a = Math.hypot(x - firstX, y - body.cy);
+          const b = Math.hypot(x - firstX - BUTTON_PITCH, y - body.cy);
+          return Math.min(a, b) <= reach ? (a <= b ? first : second) : null;
+        };
+        const zone =
+          near("slower", "faster", cancelX) ??
+          near("pause", "stop", stopX - BUTTON_PITCH);
+        if (zone) return zone;
+      }
     }
     return "body";
   }
@@ -756,9 +812,21 @@ export class FlowPill {
   _applyZoneFeedback() {
     const sp = this._springs;
     const recording = this._state === "recording";
+    const speaking = this._state === "speaking";
+    // A click on the body does what the main button does: stop a recording,
+    // pause or carry on with a reading.
+    const main = this._zone === "body";
     sp.cancelHover.to(recording && this._zone === "cancel" ? 1 : 0, STIFF_FEEDBACK);
+    sp.slowerHover.to(speaking && this._zone === "slower" ? 1 : 0, STIFF_FEEDBACK);
+    sp.fasterHover.to(speaking && this._zone === "faster" ? 1 : 0, STIFF_FEEDBACK);
+    sp.pauseHover.to(
+      speaking && (this._zone === "pause" || main) ? 1 : 0,
+      STIFF_FEEDBACK
+    );
     sp.stopHover.to(
-      recording && (this._zone === "stop" || this._zone === "body") ? 1 : 0,
+      (recording || speaking) && (this._zone === "stop" || (recording && main))
+        ? 1
+        : 0,
       STIFF_FEEDBACK
     );
   }
@@ -817,6 +885,12 @@ export class FlowPill {
       case "recording":
         if (zone === "cancel") this._actions.onCancel?.();
         else this._actions.onStop?.();
+        break;
+      case "speaking":
+        if (zone === "slower") this._actions.onSlower?.();
+        else if (zone === "faster") this._actions.onFaster?.();
+        else if (zone === "stop") this._actions.onStopSpeaking?.();
+        else this._actions.onPauseToggle?.();
         break;
       case "done":
       case "error":
@@ -904,9 +978,10 @@ export class FlowPill {
     const span = (BAR_COUNT - 1) * BAR_PITCH;
     // The row tightens as the pill opens, like dots settling into place.
     const spread = 0.82 + 0.18 * strength;
+    const centre = body.cx + this._springs.barsShift.value;
 
     this._bars.forEach((bar, i) => {
-      const x = body.cx + (i * BAR_PITCH - span / 2) * spread;
+      const x = centre + (i * BAR_PITCH - span / 2) * spread;
       const height = Math.min(bar.height, Math.max(BAR_WIDTH, body.h - 12));
       cr.setSourceRGBA(1, 1, 1, bar.alpha * strength);
       roundedRect(
@@ -941,6 +1016,61 @@ export class FlowPill {
       cr.moveTo(x + arm, body.cy - arm);
       cr.lineTo(x - arm, body.cy + arm);
       cr.stroke();
+    }
+
+    // While reading aloud: slower and faster as a minus and a plus, and
+    // pause, which turns into play while the reading is on hold.
+    const controls = sp.controls.value;
+    if (controls > 0.01) {
+      const grow = 0.7 + 0.3 * controls;
+      const r = BUTTON_RADIUS * grow;
+      const disc = (x, hover) => {
+        cr.setSourceRGBA(1, 1, 1, (0.1 + 0.1 * hover) * controls);
+        cr.arc(x, body.cy, r, 0, Math.PI * 2);
+        cr.fill();
+      };
+
+      const arm = 4.6 * grow;
+      [sp.slowerHover.value, sp.fasterHover.value].forEach((hover, i) => {
+        const x = body.x + BUTTON_INSET + i * BUTTON_PITCH;
+        disc(x, hover);
+        cr.setSourceRGBA(1, 1, 1, (0.78 + 0.22 * hover) * controls);
+        cr.setLineWidth(1.7);
+        cr.setLineCap(Cairo.LineCap.ROUND);
+        cr.moveTo(x - arm, body.cy);
+        cr.lineTo(x + arm, body.cy);
+        if (i === 1) {
+          cr.moveTo(x, body.cy - arm);
+          cr.lineTo(x, body.cy + arm);
+        }
+        cr.stroke();
+      });
+
+      const x = body.x + body.w - BUTTON_INSET - BUTTON_PITCH;
+      const hover = sp.pauseHover.value;
+      const paused = clamp01(sp.paused.value);
+      const ink = (0.78 + 0.22 * hover) * controls;
+      disc(x, hover);
+      if (paused < 0.99) {
+        cr.setSourceRGBA(1, 1, 1, ink * (1 - paused));
+        for (const side of [-1, 1]) {
+          roundedRect(cr, x + side * 2.9 * grow - 1.3, body.cy - 4.6 * grow, 2.6, 9.2 * grow, 1.3);
+          cr.fill();
+        }
+      }
+      if (paused > 0.01) {
+        const half = 5 * grow;
+        cr.setSourceRGBA(1, 1, 1, ink * paused);
+        cr.setLineJoin(Cairo.LineJoin.ROUND);
+        cr.setLineWidth(1.4);
+        // Nudged right: a triangle's weight sits left of its box.
+        cr.moveTo(x - half * 0.62, body.cy - half);
+        cr.lineTo(x + half * 0.9, body.cy);
+        cr.lineTo(x - half * 0.62, body.cy + half);
+        cr.closePath();
+        cr.fillPreserve();
+        cr.stroke();
+      }
     }
 
     const stop = sp.stop.value;

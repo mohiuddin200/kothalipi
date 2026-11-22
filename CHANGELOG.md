@@ -6,6 +6,10 @@ Notable changes to Kothalipi. The format follows [Keep a Changelog](https://keep
 
 ### Added
 
+- Read aloud. Select text in any app and press Super+Alt+A, and a Kokoro voice reads it; press again or click the
+  stop button to stop. The pill shows the reading and has buttons to pause it and to make the voice slower or faster
+  while it reads, and the settings have a voice, a speed and a sample button. It is optional: install the service
+  with `--read-aloud`.
 - A language setting. Choosing your language stops the live preview from guessing it from the first second of audio,
   which could show the words in the wrong language for a whole recording.
 

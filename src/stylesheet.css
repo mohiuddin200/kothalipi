@@ -50,6 +50,46 @@
   color: rgba(255, 255, 255, 0.96);
 }
 
+/* ------------------------------------------------------------------ tabs */
+
+.kothalipi-tabs {
+  margin: 0 0 2px 0;
+  padding: 3px;
+  spacing: 2px;
+  border-radius: 17px;
+  background-color: rgba(255, 255, 255, 0.07);
+}
+
+.kothalipi-tab {
+  padding: 5px 16px;
+  border-radius: 14px;
+  background-color: rgba(255, 255, 255, 0);
+  color: rgba(255, 255, 255, 0.68);
+  font-size: 9.75pt;
+  font-weight: 500;
+  transition-duration: 140ms;
+}
+
+.kothalipi-tab:hover {
+  color: rgba(255, 255, 255, 0.96);
+}
+
+.kothalipi-tab:checked {
+  background-color: rgba(244, 244, 242, 1);
+  color: rgba(16, 16, 18, 1);
+}
+
+.kothalipi-page {
+  spacing: 12px;
+}
+
+/* A line of guidance under a card. */
+.kothalipi-note {
+  padding: 0 16px;
+  font-size: 9pt;
+  color: rgba(255, 255, 255, 0.6);
+}
+
 /* ----------------------------------------------------------------- cards */
 
 .kothalipi-card {
@@ -178,6 +218,7 @@
 }
 
 .kothalipi-button:focus,
+.kothalipi-tab:focus,
 .kothalipi-icon-button:focus,
 .kothalipi-switch:focus,
 .kothalipi-link:focus {

@@ -10,26 +10,26 @@ export class KeybindingManager {
   }
 
   setupKeybinding() {
+    const settings = this.extensionCore.settings;
+
     // Remove existing keybinding if it exists
     Main.wm.removeKeybinding("toggle-recording");
 
     // Get shortcut from settings
-    let shortcuts = this.extensionCore.settings.get_strv("toggle-recording");
+    let shortcuts = settings.get_strv("toggle-recording");
     if (shortcuts.length > 0) {
       this.currentKeybinding = shortcuts[0];
     } else {
       // Use a much safer shortcut that doesn't conflict with system shortcuts
       // Avoid Ctrl+C (SIGINT), Ctrl+Z (SIGTSTP), and workspace navigation shortcuts
       this.currentKeybinding = "<Super><Alt>r";
-      this.extensionCore.settings.set_strv("toggle-recording", [
-        this.currentKeybinding,
-      ]);
+      settings.set_strv("toggle-recording", [this.currentKeybinding]);
     }
 
     // Register keybinding
     Main.wm.addKeybinding(
       "toggle-recording",
-      this.extensionCore.settings,
+      settings,
       Meta.KeyBindingFlags.NONE,
       Shell.ActionMode.NORMAL,
       () => {
@@ -39,11 +39,22 @@ export class KeybindingManager {
       }
     );
     log.debug(`Keybinding registered: ${this.currentKeybinding}`);
+
+    // The shell follows this key by itself; an empty list is no shortcut.
+    Main.wm.removeKeybinding("read-aloud");
+    Main.wm.addKeybinding(
+      "read-aloud",
+      settings,
+      Meta.KeyBindingFlags.NONE,
+      Shell.ActionMode.NORMAL,
+      () => this.extensionCore.readAloud()
+    );
   }
 
   cleanup() {
     // Remove keybinding
     Main.wm.removeKeybinding("toggle-recording");
+    Main.wm.removeKeybinding("read-aloud");
     this.currentKeybinding = null;
   }
 }

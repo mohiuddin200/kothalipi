@@ -118,6 +118,39 @@ export default class ShotsExtension extends Extension {
       await sleep(800);
       await this._shot(`${theme}-9-error`);
       await sleep(1100);
+
+      // Reading aloud: waiting for the first words, then following the voice.
+      pill.setState("speaking");
+      await sleep(700);
+      await this._shot(`${theme}-a-reading-starting`);
+      this._startLevels();
+      await sleep(1300);
+      await this._shot(`${theme}-b-reading`);
+      pill._zone = "stop";
+      pill._hovered = true;
+      pill._applyZoneFeedback();
+      pill._wake();
+      await sleep(300);
+      await this._shot(`${theme}-c-reading-stop-hover`);
+      pill._zone = "faster";
+      pill._applyZoneFeedback();
+      pill.setHint("1.2×", { holdMs: 4000 });
+      pill._wake();
+      await sleep(500);
+      await this._shot(`${theme}-d-reading-faster`);
+      pill.setHint(null);
+      pill._zone = "pause";
+      pill._applyZoneFeedback();
+      pill.setPaused(true);
+      await sleep(600);
+      await this._shot(`${theme}-e-reading-paused`);
+      pill.setPaused(false);
+      pill._zone = null;
+      pill._hovered = false;
+      pill._applyZoneFeedback();
+      this._stopLevels();
+      pill.setState("idle");
+      await sleep(500);
     }
 
     // The pill hidden when idle, then opening from nothing.
@@ -177,6 +210,24 @@ export default class ShotsExtension extends Extension {
         calls.push("cancel");
         return true;
       },
+      speak: async (text, voice, speed) => {
+        calls.push(`speak(${text.length} chars, ${voice}, ${speed})`);
+        if (this._speakFails) throw new Error("GDBus.Error: UnknownMethod");
+        this._onSpeak?.();
+        return "shots-speech";
+      },
+      stopSpeaking: async (speechId) => {
+        calls.push(`stopSpeaking(${speechId})`);
+        return true;
+      },
+      setSpeechSpeed: async (speechId, speed) => {
+        calls.push(`setSpeechSpeed(${speechId}, ${speed})`);
+        return true;
+      },
+      setSpeechPaused: async (speechId, paused) => {
+        calls.push(`setSpeechPaused(${speechId}, ${paused})`);
+        return !this._pauseFails;
+      },
     };
     serviceManager.dbusManager = stub;
     manager.dbusManager = stub;
@@ -219,6 +270,8 @@ export default class ShotsExtension extends Extension {
 
     await this._pointerPass(controller, pill, log);
     await this._insertPass(controller, pill, log);
+    await this._speechPass(controller, pill, log);
+    await this._settingsPass();
 
     serviceManager.dbusManager = realDbus;
     manager.dbusManager = realDbus;
@@ -291,6 +344,170 @@ export default class ShotsExtension extends Extension {
     log.push(`pointer dbus calls: ${this._calls.join(",")}`);
 
     pill._actions.onStart = realStart;
+  }
+
+  // Read aloud through the real controller, with the service stubbed out.
+  async _speechPass(recording, pill, log) {
+    const core = Main.extensionManager.lookup(this._target).stateObj;
+    const speech = core.speechController;
+    const settings = core.settings;
+    const clipboard = St.Clipboard.get_default();
+    const note = (step) =>
+      log.push(`speech ${step}: phase=${speech._phase} pill=${pill.state} label="${pill._labelMarkup}"`);
+    const settle = async () => {
+      pill.setState("idle");
+      await sleep(400);
+    };
+
+    this._calls.length = 0;
+    clipboard.set_text(St.ClipboardType.CLIPBOARD, "Copied text, read when nothing is selected.");
+    clipboard.set_text(St.ClipboardType.PRIMARY, "Selected text to read aloud.");
+    await sleep(200);
+
+    await speech.toggle(settings);
+    note("after start");
+    speech.handleSpeechLevel("shots-speech", 0.8);
+    speech.handleSpeechLevel("someone-else", 0.1);
+    await sleep(300);
+    log.push(`speech level target after matching+foreign signal: ${pill._levelTarget.toFixed(2)}`);
+    speech.handleSpeechFinished("someone-else", "completed");
+    note("foreign finish (ignored)");
+    speech.handleSpeechFinished("shots-speech", "completed");
+    note("after finish");
+
+    await speech.toggle(settings);
+    await speech.toggle(settings);
+    note("after toggle to stop");
+    speech.handleSpeechFinished("shots-speech", "stopped");
+    note("late finish after stop (ignored)");
+
+    await speech.start(settings);
+    speech.handleSpeechError("shots-speech", "Read aloud is not installed: missing the kokoro-onnx package");
+    note("after not-installed error");
+    await sleep(600);
+    await this._shot("speech-1-not-installed");
+    await settle();
+
+    // The service reports the end before its answer has been handled.
+    this._onSpeak = () => speech.handleSpeechError("shots-speech", "There is no readable text in the selection");
+    await speech.start(settings);
+    this._onSpeak = null;
+    note("error that arrives before the id");
+    await settle();
+
+    this._speakFails = true;
+    await speech.start(settings);
+    this._speakFails = false;
+    note("service too old");
+    await settle();
+
+    // A dictation in progress is not interrupted; starting one stops the reading.
+    await recording.toggleRecording(settings);
+    await core._speak();
+    note("read aloud while dictating (ignored)");
+    await recording.cancel();
+    await speech.start(settings);
+    if (speech.active) await speech.stop();
+    note("stopped for a dictation");
+
+    await speech.start(settings, "A sample that ignores the selection.");
+    note("sample text");
+    await speech.stop();
+
+    // Speed buttons: quick presses reach the service as one change.
+    settings.set_double("read-aloud-speed", 1.0);
+    await speech.start(settings);
+    speech.changeSpeed(settings, 1);
+    speech.changeSpeed(settings, 1);
+    speech.changeSpeed(settings, 1);
+    note(`three presses of faster, speed=${settings.get_double("read-aloud-speed")}`);
+    await sleep(600);
+    speech.changeSpeed(settings, -1);
+    await sleep(600);
+    note(`one press of slower, speed=${settings.get_double("read-aloud-speed")}`);
+    settings.set_double("read-aloud-speed", 1.9);
+    speech.changeSpeed(settings, 1);
+    speech.changeSpeed(settings, 1);
+    note(`faster at the limit, speed=${settings.get_double("read-aloud-speed")}`);
+    await sleep(600);
+
+    // The same through real pointer events on the pill's buttons.
+    const pointer = Clutter.get_default_backend()
+      .get_default_seat()
+      .create_virtual_device(Clutter.InputDeviceType.POINTER_DEVICE);
+    const clickAt = async (fromLeft) => {
+      const [stageX, stageY] = pill._stage.get_transformed_position();
+      const body = pill._bodyRect();
+      pointer.notify_absolute_motion(
+        GLib.get_monotonic_time(),
+        stageX + (body.x + fromLeft) * pill._scale,
+        stageY + body.cy * pill._scale
+      );
+      await sleep(300);
+      const zone = pill._zone;
+      pointer.notify_button(GLib.get_monotonic_time(), Clutter.BUTTON_PRIMARY, Clutter.ButtonState.PRESSED);
+      await sleep(60);
+      pointer.notify_button(GLib.get_monotonic_time(), Clutter.BUTTON_PRIMARY, Clutter.ButtonState.RELEASED);
+      await sleep(300);
+      return zone;
+    };
+    settings.set_double("read-aloud-speed", 1.0);
+    await sleep(500);
+    const zones = [await clickAt(20), await clickAt(20), await clickAt(50)];
+    note(`pointer on ${zones.join(", ")}, speed=${settings.get_double("read-aloud-speed")}`);
+    await sleep(500);
+    // Pause and play: the button, then a click on the body.
+    const width = pill._bodyRect().w;
+    const pauseZone = await clickAt(width - 50);
+    note(`pointer on ${pauseZone}, paused=${speech._paused} pill paused=${pill._paused}`);
+    speech.handleSpeechLevel("shots-speech", 0.9);
+    speech.changeSpeed(settings, 1);
+    await sleep(600);
+    const bodyZone = await clickAt(width / 2);
+    note(`pointer on ${bodyZone}, paused=${speech._paused} pill paused=${pill._paused}`);
+    this._pauseFails = true;
+    await speech.togglePause();
+    this._pauseFails = false;
+    note(`pause on a service that cannot, paused=${speech._paused} pill paused=${pill._paused}`);
+    await speech.togglePause();
+    const stopZone = await clickAt(width - 20);
+    note(`pointer on ${stopZone} while paused, paused=${speech._paused} pill paused=${pill._paused}`);
+    await speech.togglePause();
+    note("pause with nothing being read (ignored)");
+    pointer.notify_absolute_motion(GLib.get_monotonic_time(), 40, 40);
+    await sleep(400);
+    speech.changeSpeed(settings, 1);
+    note(`speed button with nothing being read (ignored), speed=${settings.get_double("read-aloud-speed")}`);
+    settings.set_double("read-aloud-speed", 1.0);
+
+    clipboard.set_text(St.ClipboardType.PRIMARY, "");
+    await sleep(200);
+    await speech.start(settings);
+    note("no selection (clipboard is read)");
+    await speech.stop();
+    clipboard.set_text(St.ClipboardType.CLIPBOARD, "");
+    await sleep(200);
+    await speech.start(settings);
+    note("nothing to read");
+    await sleep(500);
+    await this._shot("speech-2-nothing-selected");
+    await settle();
+
+    log.push(`speech dbus calls: ${this._calls.join(" | ")}`);
+  }
+
+  // The settings dialog, one shot per tab.
+  async _settingsPass() {
+    const core = Main.extensionManager.lookup(this._target).stateObj;
+    const monitor = Main.layoutManager.primaryMonitor;
+    core.uiManager.showSettingsWindow();
+    await sleep(900);
+    await this._shot("settings-1-dictation", monitor.width, monitor.height);
+    core.uiManager.settingsDialog._tabs.select(1);
+    await sleep(500);
+    await this._shot("settings-2-read-aloud", monitor.width, monitor.height);
+    core.uiManager.settingsDialog.close({ animate: false });
+    await sleep(300);
   }
 
   // Dictates into a real text field: once into a field that accepts direct
@@ -409,6 +626,29 @@ export default class ShotsExtension extends Extension {
         },
         terminal,
         [String(spoken.length)]
+      );
+    }
+
+    // Text selected in a real window, read aloud through the real controller.
+    const readfield = GLib.getenv("KOTHALIPI_READFIELD");
+    if (readfield) {
+      const speech = Main.extensionManager.lookup(this._target).stateObj.speechController;
+      await withField(
+        "reading",
+        {},
+        async () => {
+          await speech.start(settings);
+          log.push(
+            `read aloud[window] phase=${speech._phase} pill=${pill.state} call=${this._calls[this._calls.length - 1]}`
+          );
+          this._startLevels();
+          await sleep(1300);
+          await this._shot("reading-1-window", 760, 520);
+          this._stopLevels();
+          await speech.stop();
+          await sleep(500);
+        },
+        readfield
       );
     }
 

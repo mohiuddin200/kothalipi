@@ -70,11 +70,17 @@ To try your changes in your real session, log out and back in (Wayland) or resta
 After editing anything under `service/`, reinstall it and restart the running copy:
 
 ```bash
-./service/install-service.sh --local          # add --gpu --whisper-model <name> if you use them
+./service/install-service.sh --local          # add --gpu --whisper-model <name> --read-aloud if you use them
 pkill -f kothalipi-service                    # D-Bus starts it again on the next request
 ```
 
 Re-running the installer rebuilds the service's virtual environment from scratch.
+
+To hear read aloud without the extension, which a Wayland session only reloads at login:
+
+```bash
+dev/say.sh "Text to read aloud."
+```
 
 ## Code guidelines
 

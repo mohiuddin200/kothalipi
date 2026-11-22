@@ -84,7 +84,7 @@ shots)
     export KOTHALIPI_SHOTS_DIR="$OUT" KOTHALIPI_TARGET_UUID="$UUID"
     # The harness opens a test text field inside the headless shell only.
     export KOTHALIPI_WAYLAND_DISPLAY="kothalipi-dev-$$" KOTHALIPI_TEXTFIELD="$REPO/dev/textfield.js" \
-        KOTHALIPI_TERMFIELD="$REPO/dev/termfield.js"
+        KOTHALIPI_TERMFIELD="$REPO/dev/termfield.js" KOTHALIPI_READFIELD="$REPO/dev/readfield.js"
     # Match the real desktop: Ubuntu's font and an auto-hiding bottom dock.
     dconf write /org/gnome/desktop/interface/font-name "'Ubuntu Sans 11'"
     dconf write /org/gnome/shell/extensions/dash-to-dock/dock-position "'BOTTOM'"

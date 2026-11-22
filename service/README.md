@@ -4,7 +4,7 @@
 > [Speech2Text](https://github.com/kavehtehrani/speech2text-extension) by Kaveh Tehrani.
 > `kothalipi-service` is not on PyPI yet: where this document says `--pypi`, use `--local` from a clone for now.
 
-A D-Bus service that provides speech-to-text functionality for the GNOME Shell Kothalipi extension.
+A D-Bus service that provides speech-to-text and read aloud for the GNOME Shell Kothalipi extension.
 
 ## Overview
 
@@ -16,6 +16,7 @@ This service handles the actual speech recognition processing using OpenAI's Whi
 - **D-Bus integration** for seamless desktop integration
 - **Audio recording** with configurable duration
 - **Multiple output modes** (clipboard, text insertion, preview)
+- **Read aloud** (optional): text to speech with Kokoro, played as it is made
 - **Error handling** and recovery
 - **Session management** for multiple concurrent recordings
 
@@ -83,6 +84,17 @@ The model name is recorded for UI display purposes. The actual model files are d
 - **CPU mode (default)**: Recommended for most users. Easier installation and better compatibility across systems.
 - **GPU mode**: Use `--gpu` flag to install GPU-enabled ML dependencies. On Linux, this typically requires NVIDIA CUDA support.
 
+**Read Aloud**
+
+Use `--read-aloud` to also install text to speech. It adds the `kokoro-onnx` package to the virtual environment and
+downloads the Kokoro model files (about 350 MB) to `~/.local/share/kothalipi-service/tts`. It needs Python 3.10 or
+newer, and plays through `paplay` or `pw-play`. Without it the service still starts, and a request to read aloud is
+answered with an error that says it is not installed.
+
+The model files are kept when the installer rebuilds the virtual environment, so only the first install downloads
+them. Pass `--read-aloud` again on every reinstall, or the package is left out. Set `KOTHALIPI_TTS_DIR` before the
+service starts to load the model files from another directory.
+
 **CPU Thread Count**
 
 CPU inference uses up to four threads by default. Set `KOTHALIPI_CPU_THREADS` before the service starts to override
@@ -105,6 +117,9 @@ Log out and back in after changing the file so the D-Bus-activated service inher
 
 # Medium model with GPU support
 ./service/install-service.sh --pypi --gpu --whisper-model medium
+
+# Base model with read aloud
+./service/install-service.sh --pypi --whisper-model base --read-aloud
 
 # Small English-only model, CPU mode
 ./service/install-service.sh --pypi --whisper-model small.en
@@ -168,6 +183,10 @@ Methods:
 - `TypeText(text, copy_to_clipboard)` → `success`
 - `GetServiceStatus()` → `status`
 - `CheckDependencies()` → `all_available, missing_dependencies[]`
+- `Speak(text, voice, speed)` → `speech_id` (replaces any speech in progress)
+- `StopSpeaking(speech_id)` → `success` (an empty id stops whatever is being read)
+- `PauseSpeaking(speech_id)` → `success` and `ResumeSpeaking(speech_id)` → `success`
+- `SetSpeechSpeed(speech_id, speed)` → `success` (carries on from the clause being spoken, under the same id)
 
 Signals:
 
@@ -176,10 +195,14 @@ Signals:
 - `TranscriptionReady(recording_id, text)`
 - `RecordingError(recording_id, error_message)`
 - `TextTyped(text, success)`
+- `SpeechStarted(speech_id)`
+- `SpeechFinished(speech_id, reason)` (`completed` or `stopped`)
+- `SpeechError(speech_id, error_message)`
+- `SpeechLevel(speech_id, level)` (loudness of what is playing, 0 to 1, about 20 times a second)
 
 ## Requirements
 
-- **Python**: 3.8–3.13 (Python 3.14+ not supported yet)
+- **Python**: 3.8–3.13 (Python 3.14+ not supported yet); read aloud needs 3.10 or newer
 - **System**: Linux with D-Bus support
 - **Desktop**: GNOME Shell (tested on GNOME 46+)
 
